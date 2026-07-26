@@ -19,7 +19,7 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-scripts/.venv-convert/
+scripts/.venv-*
 scripts/llama.cpp-src/
 
 # Jupyter

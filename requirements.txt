@@ -6,3 +6,5 @@ numpy
 tensorflow
 matplotlib
 llama-cpp-python
+onnx
+onnxruntime

@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""
+ONNX Runtime baseline benchmark: mirrors evaluation_baseline/ and
+evaluation_llama_cpp/, but runs the model via ONNX Runtime instead of HF
+Transformers/PyTorch or llama.cpp.
+
+Precisions
+-----------
+fp32          — Unquantized FP32 ONNX export.
+fp16          — Unquantized FP16 ONNX export (CoreML/ANE-friendly; not
+                recommended on plain CPU -- no fast FP16 SIMD path on
+                ARM/x86, see evaluation_onnx/readme.md).
+dynamic-int8  — Post-training dynamic quantization (weights INT8,
+                activations quantized on-the-fly at runtime; no calibration
+                needed).
+static-int8   — Post-training static quantization (weights AND activations
+                INT8, calibrated offline on real dataset prompts; full
+                speedup, needs the calibration step in
+                scripts/quantize_onnx.py).
+
+Devices (Execution Providers)
+------------------------------
+cpu     — CPUExecutionProvider (all platforms).
+coreml  — CoreMLExecutionProvider (Apple Silicon only; routes ops through
+          the ANE/GPU via CoreML, falls back to CPU per-op for anything
+          unsupported).
+
+Mode
+-----
+Only prefix_cache-style caching is implemented (system prompt ingested once,
+Reused via a cloned KV-cache dict for every example) since ONNX Runtime's
+decoder-with-past graphs are inherently a from-scratch-only ("no_cache"
+would just mean an empty starting cache each phase) or KV-cache design --
+see evaluation_onnx/cache.py.
+
+Usage
+------
+    # Activate the project venv first: source .venv/bin/activate
+    python evaluation_onnx/run.py --model qwen3 --precision static-int8 --device cpu
+    python evaluation_onnx/run.py --model llama3 --precision fp16 --device coreml
+
+Output
+------
+    evaluation_onnx/results/<model>_<machine>_<device>_<mode>_<precision>_<timestamp>.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import platform
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import onnxruntime as ort
+import transformers
+
+_REPO_ROOT = Path(__file__).parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from evaluation_lib.config import (
+    DATASET_DEFAULT,
+    MODEL_DISPLAY_NAMES,
+    MODEL_PATHS,
+    ONNX_PRECISIONS,
+    WARMUP_EXAMPLES,
+)
+from evaluation_lib.metrics import aggregate_metrics, compute_quality
+from evaluation_lib.output_parser import extract_predicted_tool
+from evaluation_lib.prompt import (
+    build_full_prompt,
+    build_system_prefix_text,
+    build_tools_only_prompt,
+)
+from evaluation_onnx.cache import (
+    Cache,
+    clone_cache,
+    compute_prefix_cache,
+    kv_cache_bytes,
+    run_segment,
+)
+from evaluation_onnx.inference import (
+    find_tools_query_boundary,
+    run_inference,
+)
+from evaluation_onnx.model_loader import (
+    load_session,
+    load_text_tokenizer,
+    onnx_model_size_mb,
+)
+
+_RESULTS_DIR = _REPO_ROOT / "evaluation_onnx" / "results"
+
+
+def resolve_device(device_arg: str) -> str:
+    """Return the concrete device string for a given ``--device`` argument."""
+    if device_arg != "auto":
+        return device_arg
+    if platform.system() == "Darwin" and "CoreMLExecutionProvider" in (
+        ort.get_available_providers()
+    ):
+        return "coreml"
+    return "cpu"
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="ONNX Runtime baseline benchmark",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument(
+        "--model",
+        choices=list(MODEL_PATHS),
+        required=True,
+        help="Model to benchmark",
+    )
+    p.add_argument(
+        "--precision",
+        choices=ONNX_PRECISIONS,
+        required=True,
+        help=(
+            "ONNX model precision/quantization. Recommended matrix: "
+            "cpu -> {fp32, dynamic-int8, static-int8}; "
+            "coreml -> {fp16, dynamic-int8, static-int8}."
+        ),
+    )
+    p.add_argument(
+        "--device",
+        choices=["auto", "cpu", "coreml"],
+        default="auto",
+        help="Execution provider (coreml offloads to Apple's ANE/GPU via CoreML)",
+    )
+    p.add_argument(
+        "--machine",
+        type=str,
+        default=platform.node() or "unknown",
+        help="Label identifying the physical machine this run was executed on",
+    )
+    p.add_argument(
+        "--dataset",
+        type=Path,
+        default=DATASET_DEFAULT,
+        help="Path to dataset JSON file",
+    )
+    p.add_argument(
+        "--output-dir",
+        type=Path,
+        default=_RESULTS_DIR,
+        help="Directory to write JSON results",
+    )
+    p.add_argument(
+        "--warmup",
+        type=int,
+        default=WARMUP_EXAMPLES,
+        help="Number of warmup examples excluded from measurements",
+    )
+    return p.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    device = resolve_device(args.device)
+
+    print("=== ONNX Runtime Benchmark ===")
+    print(f"  model     : {args.model} ({MODEL_DISPLAY_NAMES[args.model]})")
+    print(f"  machine   : {args.machine}")
+    print(f"  precision : {args.precision}")
+    print(f"  device    : {device}")
+    print(f"  dataset   : {args.dataset}")
+    print(f"  warmup    : {args.warmup} examples\n")
+
+    with open(args.dataset) as f:
+        dataset: list[dict] = json.load(f)
+    print(f"[data] Loaded {len(dataset)} examples from {args.dataset.name}\n")
+
+    session = load_session(args.model, args.precision, device)
+    weights_mb = onnx_model_size_mb(args.model, args.precision)
+    print(
+        f"[model] ONNX file size: {weights_mb:.1f} MB ({args.precision} on {device})\n"
+    )
+
+    text_tokenizer = load_text_tokenizer(MODEL_PATHS[args.model])
+    eos_token_ids: set[int] = set(
+        transformers.GenerationConfig.from_pretrained(
+            str(MODEL_PATHS[args.model])
+        ).eos_token_id
+        or []
+    )
+    if text_tokenizer.eos_token_id is not None:
+        eos_token_ids.add(text_tokenizer.eos_token_id)
+
+    def tok(text: str) -> np.ndarray:
+        return text_tokenizer(text, return_tensors="np").input_ids.astype(np.int64)
+
+    system_prefix_text = build_system_prefix_text(text_tokenizer)
+    system_tokens_template = (
+        tok(system_prefix_text)
+        if system_prefix_text
+        else (np.empty((1, 0), dtype=np.int64))
+    )
+    system_len = system_tokens_template.shape[1]
+
+    # ------------------------------------------------------------------
+    # Prefix-cache setup (computed once; cloned per example -- see module
+    # docstring on why ONNX Runtime only supports this caching style).
+    # ------------------------------------------------------------------
+    prefix_cache: Cache | None
+    prefix_cache, prefix_len, prefix_creation_ms = compute_prefix_cache(
+        session, system_tokens_template
+    )
+    prefix_cache_size_bytes = kv_cache_bytes(prefix_cache)
+
+    _sample_prompt = build_full_prompt(
+        text_tokenizer, dataset[0]["user_request"], dataset[0]["available_tools"]
+    )
+    _full_ids = tok(_sample_prompt)
+    if not np.array_equal(_full_ids[:, :system_len], system_tokens_template):
+        print(
+            "[prefix_cache] WARNING: prefix tokens do not align with full "
+            "prompt tokens. Falling back to full prompt (no prefix savings)."
+        )
+        prefix_cache = None
+        prefix_len = 0
+    else:
+        print(
+            f"[prefix_cache] Prefix alignment verified."
+            f" prefix_len={prefix_len} tokens.\n"
+        )
+
+    # ------------------------------------------------------------------
+    # Inference loop
+    # ------------------------------------------------------------------
+    per_example: list[dict] = []
+
+    for idx, example in enumerate(dataset):
+        user_request = example["user_request"]
+        available_tools = example["available_tools"]
+        expected = example["answer"]
+        tool_names = {t["name"] for t in available_tools}
+
+        full_prompt = build_full_prompt(text_tokenizer, user_request, available_tools)
+        full_ids = tok(full_prompt)
+
+        tools_only_prompt = build_tools_only_prompt(text_tokenizer, available_tools)
+        tools_only_ids = tok(tools_only_prompt)
+        boundary = find_tools_query_boundary(full_ids, tools_only_ids)
+
+        is_warmup = idx < args.warmup
+        tag = (
+            "[warmup]"
+            if is_warmup
+            else f"[{idx - args.warmup + 1:3d}/{len(dataset) - args.warmup}]"
+        )
+
+        # System prompt was already ingested once outside the loop
+        # (compute_prefix_cache): zero incremental cost per example.
+        cache_after_system = clone_cache(prefix_cache) if prefix_cache else {}
+        system_prefill_ms = 0.0
+        system_prefill_tokens = prefix_len
+
+        tools_ids = full_ids[:, system_len:boundary]
+        query_ids = full_ids[:, boundary:]
+
+        cache_after_tools, _tools_logits, tools_prefill_ms = run_segment(
+            session, tools_ids, cache_after_system
+        )
+
+        timing = run_inference(
+            session,
+            text_tokenizer,
+            query_ids,
+            cache_after_tools,
+            eos_token_ids,
+            system_prefill_ms=system_prefill_ms,
+            system_prefill_tokens=system_prefill_tokens,
+            tools_prefill_ms=tools_prefill_ms,
+            tools_prefill_tokens=tools_ids.shape[1],
+        )
+
+        predicted = extract_predicted_tool(timing["generated_text"], tool_names)
+        correct = predicted == expected
+
+        if not is_warmup:
+            print(
+                f"{tag} e2e={timing['e2e_latency_ms']:.0f}ms"
+                f"  ttft={timing['ttft_ms']:.0f}ms"
+                f"  expected={expected!r}  predicted={predicted!r}"
+                f"  {'OK' if correct else 'WRONG'}"
+            )
+            per_example.append(
+                {
+                    "id": idx - args.warmup,
+                    "user_request": user_request,
+                    "expected": expected,
+                    "predicted": predicted,
+                    "correct": correct,
+                    **timing,
+                }
+            )
+        else:
+            print(f"{tag} e2e={timing['e2e_latency_ms']:.0f}ms  (warmup, not recorded)")
+
+    print(f"\n[done] Measured {len(per_example)} examples.")
+
+    # ------------------------------------------------------------------
+    # Summaries
+    # ------------------------------------------------------------------
+    aggregate = aggregate_metrics(per_example)
+    quality = compute_quality(per_example, dataset, args.warmup)
+
+    print("\n--- Quality ---")
+    print(f"  accuracy       : {quality.get('tool_accuracy', 0):.2%}")
+    print(f"  invalid rate   : {quality.get('invalid_tool_rate', 0):.2%}")
+    print("\n--- Latency (mean) ---")
+    print(
+        f"  preprocessing  : {aggregate.get('mean_preprocessing_latency_ms')} ms"
+        f" (system prompt + tools list; excluded from TTFT/E2E below)"
+    )
+    print(
+        f"    system prompt: {aggregate.get('mean_system_prefill_latency_ms')} ms"
+        f" ({aggregate.get('mean_system_prefill_tokens')} tok)"
+    )
+    print(
+        f"    tools list   : {aggregate.get('mean_tools_prefill_latency_ms')} ms"
+        f" ({aggregate.get('mean_tools_prefill_tokens')} tok)"
+    )
+    print(f"  TTFT           : {aggregate.get('mean_ttft_ms')} ms (user query only)")
+    print(f"  prefill        : {aggregate.get('mean_prefill_latency_ms')} ms")
+    print(f"  decode         : {aggregate.get('mean_decode_latency_ms')} ms")
+    print(
+        f"  E2E            : {aggregate.get('mean_e2e_latency_ms')} ms"
+        f" (user query + decode only)"
+    )
+    print("\n--- Throughput ---")
+    print(f"  prefill tok/s  : {aggregate.get('mean_prefill_tok_per_sec')}")
+    print(f"  decode tok/s   : {aggregate.get('mean_decode_tok_per_sec')}")
+    print("\n--- Memory ---")
+    print(f"  model file     : {weights_mb:.1f} MB (static, {args.precision})")
+    print(f"  peak RAM       : {aggregate.get('peak_ram_mb')} MB")
+    print(f"  mean KV state  : {aggregate.get('mean_kv_cache_kb')} KB")
+
+    # ------------------------------------------------------------------
+    # Write JSON output
+    # ------------------------------------------------------------------
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    run_config: dict[str, Any] = {
+        "model_key": args.model,
+        "model_name": MODEL_DISPLAY_NAMES[args.model],
+        "model_path": str(MODEL_PATHS[args.model]),
+        "machine": args.machine,
+        "mode": "prefix_cache",
+        "device": device,
+        "precision": args.precision,
+        "dataset": str(args.dataset),
+        "n_dataset_examples": len(dataset),
+        "n_measured_examples": len(per_example),
+        "warmup_examples": args.warmup,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "os": platform.system(),
+        "python_version": sys.version,
+        "onnxruntime_version": ort.__version__,
+        "onnxruntime_providers": session.get_providers(),
+        "transformers_version": transformers.__version__,
+        "model_weights_mb": weights_mb,
+        "prefill_split_info": {
+            "enabled": True,
+            "note": (
+                "prefill is measured in 3 phases: system_prefill_* covers "
+                "ingesting the static system prompt, tools_prefill_* covers "
+                "ingesting the available-tools list, query_prefill_* covers "
+                "ingesting the dynamic user query. Both system prompt and "
+                "tools list are treated as pre-processing that happens ahead "
+                "of the live request in production, so ttft_ms/"
+                "prefill_latency_ms/e2e_latency_ms cover ONLY the user-query "
+                "phase (+ decode for e2e); preprocessing_latency_ms is the "
+                "sum of system_prefill_latency_ms + tools_prefill_latency_ms. "
+                "system_prefill_latency_ms is 0 per example because the "
+                "system prompt is cached once (see prefix_cache_info) rather "
+                "than re-ingested every call."
+            ),
+        },
+        "prefix_cache_info": {
+            "prefix_tokens": prefix_len,
+            "creation_time_ms": round(prefix_creation_ms, 3),
+            "cache_size_kb": round(prefix_cache_size_bytes / 1024, 2),
+            "note": (
+                "One-time cost to compute the system-prompt KV cache, "
+                "excluded from per-example measurements above."
+            ),
+        },
+    }
+
+    output = {
+        "run_config": run_config,
+        "aggregate": aggregate,
+        "quality": quality,
+        "per_example": per_example,
+    }
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    out_path = (
+        args.output_dir
+        / f"{args.model}_{args.machine}_{device}_prefix_cache_{args.precision}_{ts}.json"
+    )
+    with open(out_path, "w") as f:
+        json.dump(output, f, indent=2)
+    print(f"\n[output] Results written to {out_path}")
+
+
+if __name__ == "__main__":
+    main()

@@ -36,6 +36,20 @@ QUANT_LEVELS: list[str] = ["Q8_0", "Q6_K", "Q4_K_M"]
 
 N_CTX_DEFAULT: int = 2048
 
+# ONNX model directory for the evaluation_onnx evaluation (see
+# evaluation_onnx/readme.md for the export + quantization steps).
+ONNX_DIR: Path = REPO_ROOT / "models" / "onnx"
+
+MODEL_ONNX_STEMS: dict[str, str] = {
+    "qwen3": "qwen3-0.6b",
+    "llama3": "llama3.2-1b",
+}
+
+# Precision variants benchmarked for evaluation_onnx. Directory names follow
+# <stem>-<PRECISION>/model.onnx, produced by scripts/quantize_onnx.py (and
+# optimum-cli export onnx for the fp32/fp16 base exports).
+ONNX_PRECISIONS: list[str] = ["fp32", "fp16", "dynamic-int8", "static-int8"]
+
 # Static system prompt used for all tool-routing evaluations.
 # This is also the cacheable prefix in prefix_cache mode.
 SYSTEM_PROMPT: str = (
