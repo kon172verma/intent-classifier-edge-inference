@@ -60,7 +60,7 @@ def run_inference(
     """
     cached_prefix_tokens = kv_cache_tokens(cache)
 
-    t_start = time.perf_counter()
+    t_start = time.perf_counter()  # noqa: F841
     cache, logits, query_prefill_ms = run_segment(session, query_ids, cache)
     t_query_done = time.perf_counter()
     # run_segment() already measures its own wall-clock time internally;
