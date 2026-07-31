@@ -50,6 +50,21 @@ MODEL_ONNX_STEMS: dict[str, str] = {
 # optimum-cli export onnx for the fp32/fp16 base exports).
 ONNX_PRECISIONS: list[str] = ["fp32", "fp16", "dynamic-int8", "static-int8"]
 
+# TensorRT-LLM engine directory for the evaluation_tensorrt evaluation (see
+# evaluation_tensorrt/readme.md for the convert + build steps).
+TENSORRT_DIR: Path = REPO_ROOT / "models" / "tensorrt"
+
+MODEL_TENSORRT_STEMS: dict[str, str] = {
+    "qwen3": "qwen3-0.6b",
+    "llama3": "llama3.2-1b",
+}
+
+# Dtype variants benchmarked for evaluation_tensorrt. Directory names follow
+# <stem>-<DTYPE>/, produced by scripts/build_trt_engine.py.
+# fp16 is the primary Jetson Orin target (SM87, no BF16 hardware support).
+# bf16 is available on Ampere/Ada/Hopper data-centre GPUs.
+TENSORRT_DTYPES: list[str] = ["fp16", "bf16", "int8", "int4"]
+
 # Static system prompt used for all tool-routing evaluations.
 # This is also the cacheable prefix in prefix_cache mode.
 SYSTEM_PROMPT: str = (

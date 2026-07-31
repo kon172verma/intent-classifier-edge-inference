@@ -24,6 +24,11 @@ cpu     — CPUExecutionProvider (all platforms).
 coreml  — CoreMLExecutionProvider (Apple Silicon only; routes ops through
           the ANE/GPU via CoreML, falls back to CPU per-op for anything
           unsupported).
+qnn     — QnnExecutionProvider (Qualcomm Snapdragon devices; Windows on
+          Snapdragon, Linux ARM64 with QNN SDK, Android).  Backend options:
+          htp  → Hexagon DSP / HTP (default; best throughput for LLM inference)
+          gpu  → Adreno GPU (fp32/fp16)
+          cpu  → QNN CPU reference (debug only)
 
 Mode
 -----
@@ -100,10 +105,11 @@ def resolve_device(device_arg: str) -> str:
     """Return the concrete device string for a given ``--device`` argument."""
     if device_arg != "auto":
         return device_arg
-    if platform.system() == "Darwin" and "CoreMLExecutionProvider" in (
-        ort.get_available_providers()
-    ):
+    available = ort.get_available_providers()
+    if platform.system() == "Darwin" and "CoreMLExecutionProvider" in available:
         return "coreml"
+    if "QnnExecutionProvider" in available:
+        return "qnn"
     return "cpu"
 
 
@@ -125,14 +131,45 @@ def parse_args() -> argparse.Namespace:
         help=(
             "ONNX model precision/quantization. Recommended matrix: "
             "cpu -> {fp32, dynamic-int8, static-int8}; "
-            "coreml -> {fp16, dynamic-int8, static-int8}."
+            "coreml -> {fp16}; "
+            "qnn -> {fp32, fp16} (INT8 requires QDQ-quantized models; "
+            "our static/dynamic-int8 use ORT QOperator format which QNN EP "
+            "does not support -- use fp32 or fp16 on QNN)."
         ),
     )
     p.add_argument(
         "--device",
-        choices=["auto", "cpu", "coreml"],
+        choices=["auto", "cpu", "coreml", "qnn"],
         default="auto",
-        help="Execution provider (coreml offloads to Apple's ANE/GPU via CoreML)",
+        help=(
+            "Execution provider. "
+            "coreml: Apple ANE/GPU (macOS only). "
+            "qnn: Qualcomm AI Engine via QNN SDK (Snapdragon devices). "
+            "auto: coreml on Apple Silicon, qnn if QnnExecutionProvider is "
+            "available, otherwise cpu."
+        ),
+    )
+    p.add_argument(
+        "--qnn-backend",
+        choices=["htp", "gpu", "cpu"],
+        default="htp",
+        help=(
+            "QNN backend to use when --device=qnn. "
+            "htp: Hexagon DSP (best latency for LLM inference on Snapdragon). "
+            "gpu: Adreno GPU (fp32/fp16). "
+            "cpu: QNN CPU reference backend (debug only)."
+        ),
+    )
+    p.add_argument(
+        "--qnn-lib-path",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Explicit path to the QNN backend shared library "
+            "(e.g. /opt/qcom/qnn/lib/aarch64-android/libQnnHtp.so). "
+            "Defaults to the OS-standard library name resolved from PATH."
+        ),
     )
     p.add_argument(
         "--machine",
@@ -177,7 +214,13 @@ def main() -> None:
         dataset: list[dict] = json.load(f)
     print(f"[data] Loaded {len(dataset)} examples from {args.dataset.name}\n")
 
-    session = load_session(args.model, args.precision, device)
+    session = load_session(
+        args.model,
+        args.precision,
+        device,
+        qnn_backend=args.qnn_backend,
+        qnn_lib_path=args.qnn_lib_path,
+    )
     weights_mb = onnx_model_size_mb(args.model, args.precision)
     print(
         f"[model] ONNX file size: {weights_mb:.1f} MB ({args.precision} on {device})\n"
@@ -364,6 +407,8 @@ def main() -> None:
         "python_version": sys.version,
         "onnxruntime_version": ort.__version__,
         "onnxruntime_providers": session.get_providers(),
+        "qnn_backend": args.qnn_backend if device == "qnn" else None,
+        "qnn_lib_path": args.qnn_lib_path if device == "qnn" else None,
         "transformers_version": transformers.__version__,
         "model_weights_mb": weights_mb,
         "prefill_split_info": {
