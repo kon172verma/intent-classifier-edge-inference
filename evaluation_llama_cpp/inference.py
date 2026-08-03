@@ -15,25 +15,9 @@ from typing import Any
 
 from llama_cpp import Llama
 
+from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.config import MAX_NEW_TOKENS
 from evaluation_llama_cpp.cache import kv_cache_bytes, kv_cache_tokens, synchronize
-
-
-def find_tools_query_boundary(
-    full_tokens: list[int], tools_only_tokens: list[int]
-) -> int:
-    """Return the index (within *full_tokens*) where the user-query tokens begin.
-
-    Computed as the length of the common token prefix between the real
-    prompt's ids and an equivalent prompt built with an empty user request
-    (see ``build_tools_only_prompt``). Mirrors
-    ``evaluation_baseline.inference.find_tools_query_boundary``.
-    """
-    n = min(len(full_tokens), len(tools_only_tokens))
-    for i in range(n):
-        if full_tokens[i] != tools_only_tokens[i]:
-            return i
-    return n
 
 
 def run_inference(
@@ -103,9 +87,7 @@ def run_inference(
         (len(query_tokens) / query_prefill_ms * 1000) if query_prefill_ms > 0 else None
     )
     decode_tok_per_sec = (
-        ((n_generated - 1) / decode_ms * 1000)
-        if decode_ms > 0 and n_generated > 1
-        else None
+        ((n_generated - 1) / decode_ms * 1000) if decode_ms > 0 and n_generated > 1 else None
     )
 
     kv_bytes = kv_cache_bytes(llm)
@@ -133,19 +115,13 @@ def run_inference(
     if report_prefill_split:
         query_prefill_tokens = len(query_tokens)
         system_tok_per_sec = (
-            (system_prefill_tokens / system_prefill_ms * 1000)
-            if system_prefill_ms > 0
-            else None
+            (system_prefill_tokens / system_prefill_ms * 1000) if system_prefill_ms > 0 else None
         )
         tools_tok_per_sec = (
-            (tools_prefill_tokens / tools_prefill_ms * 1000)
-            if tools_prefill_ms > 0
-            else None
+            (tools_prefill_tokens / tools_prefill_ms * 1000) if tools_prefill_ms > 0 else None
         )
         query_tok_per_sec = (
-            (query_prefill_tokens / query_prefill_ms * 1000)
-            if query_prefill_ms > 0
-            else None
+            (query_prefill_tokens / query_prefill_ms * 1000) if query_prefill_ms > 0 else None
         )
         output.update(
             {
@@ -153,23 +129,17 @@ def run_inference(
                 "system_prefill_latency_ms": round(system_prefill_ms, 3),
                 "system_prefill_tokens": system_prefill_tokens,
                 "system_prefill_tok_per_sec": (
-                    round(system_tok_per_sec, 2)
-                    if system_tok_per_sec is not None
-                    else None
+                    round(system_tok_per_sec, 2) if system_tok_per_sec is not None else None
                 ),
                 "tools_prefill_latency_ms": round(tools_prefill_ms, 3),
                 "tools_prefill_tokens": tools_prefill_tokens,
                 "tools_prefill_tok_per_sec": (
-                    round(tools_tok_per_sec, 2)
-                    if tools_tok_per_sec is not None
-                    else None
+                    round(tools_tok_per_sec, 2) if tools_tok_per_sec is not None else None
                 ),
                 "query_prefill_latency_ms": round(query_prefill_ms, 3),
                 "query_prefill_tokens": query_prefill_tokens,
                 "query_prefill_tok_per_sec": (
-                    round(query_tok_per_sec, 2)
-                    if query_tok_per_sec is not None
-                    else None
+                    round(query_tok_per_sec, 2) if query_tok_per_sec is not None else None
                 ),
             }
         )

@@ -8,23 +8,9 @@ from typing import Any
 import numpy as np
 import onnxruntime as ort
 
+from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.config import MAX_NEW_TOKENS
 from evaluation_onnx.cache import Cache, kv_cache_bytes, kv_cache_tokens, run_segment
-
-
-def find_tools_query_boundary(full_ids: np.ndarray, tools_only_ids: np.ndarray) -> int:
-    """Return the index (within *full_ids*) where the user-query tokens begin.
-
-    Computed as the length of the common token prefix between the real
-    prompt's ids and an equivalent prompt built with an empty user request
-    (see ``build_tools_only_prompt``). Mirrors the identically-named helper
-    in ``evaluation_baseline``/``evaluation_llama_cpp``.
-    """
-    n = min(full_ids.shape[1], tools_only_ids.shape[1])
-    a = full_ids[0, :n]
-    b = tools_only_ids[0, :n]
-    mismatch = np.nonzero(a != b)[0]
-    return int(mismatch[0]) if mismatch.size > 0 else n
 
 
 def run_inference(
@@ -96,25 +82,17 @@ def run_inference(
 
     query_prefill_tokens = query_ids.shape[1]
     prefill_tok_per_sec = (
-        (query_prefill_tokens / query_prefill_ms * 1000)
-        if query_prefill_ms > 0
-        else None
+        (query_prefill_tokens / query_prefill_ms * 1000) if query_prefill_ms > 0 else None
     )
     decode_tok_per_sec = (
-        ((n_generated - 1) / decode_ms * 1000)
-        if decode_ms > 0 and n_generated > 1
-        else None
+        ((n_generated - 1) / decode_ms * 1000) if decode_ms > 0 and n_generated > 1 else None
     )
 
     system_tok_per_sec = (
-        (system_prefill_tokens / system_prefill_ms * 1000)
-        if system_prefill_ms > 0
-        else None
+        (system_prefill_tokens / system_prefill_ms * 1000) if system_prefill_ms > 0 else None
     )
     tools_tok_per_sec = (
-        (tools_prefill_tokens / tools_prefill_ms * 1000)
-        if tools_prefill_ms > 0
-        else None
+        (tools_prefill_tokens / tools_prefill_ms * 1000) if tools_prefill_ms > 0 else None
     )
     query_tok_per_sec = prefill_tok_per_sec
 

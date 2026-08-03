@@ -88,10 +88,9 @@ from evaluation_onnx.cache import (
     kv_cache_bytes,
     run_segment,
 )
-from evaluation_onnx.inference import (
-    find_tools_query_boundary,
-    run_inference,
-)
+from evaluation_onnx.inference import run_inference
+from evaluation_lib.boundary import find_tools_query_boundary
+from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
 from evaluation_onnx.model_loader import (
     load_session,
     load_text_tokenizer,
@@ -222,15 +221,11 @@ def main() -> None:
         qnn_lib_path=args.qnn_lib_path,
     )
     weights_mb = onnx_model_size_mb(args.model, args.precision)
-    print(
-        f"[model] ONNX file size: {weights_mb:.1f} MB ({args.precision} on {device})\n"
-    )
+    print(f"[model] ONNX file size: {weights_mb:.1f} MB ({args.precision} on {device})\n")
 
     text_tokenizer = load_text_tokenizer(MODEL_PATHS[args.model])
     eos_token_ids: set[int] = set(
-        transformers.GenerationConfig.from_pretrained(
-            str(MODEL_PATHS[args.model])
-        ).eos_token_id
+        transformers.GenerationConfig.from_pretrained(str(MODEL_PATHS[args.model])).eos_token_id
         or []
     )
     if text_tokenizer.eos_token_id is not None:
@@ -241,9 +236,7 @@ def main() -> None:
 
     system_prefix_text = build_system_prefix_text(text_tokenizer)
     system_tokens_template = (
-        tok(system_prefix_text)
-        if system_prefix_text
-        else (np.empty((1, 0), dtype=np.int64))
+        tok(system_prefix_text) if system_prefix_text else (np.empty((1, 0), dtype=np.int64))
     )
     system_len = system_tokens_template.shape[1]
 
@@ -269,10 +262,7 @@ def main() -> None:
         prefix_cache = None
         prefix_len = 0
     else:
-        print(
-            f"[prefix_cache] Prefix alignment verified."
-            f" prefix_len={prefix_len} tokens.\n"
-        )
+        print(f"[prefix_cache] Prefix alignment verified. prefix_len={prefix_len} tokens.\n")
 
     # ------------------------------------------------------------------
     # Inference loop
@@ -290,7 +280,7 @@ def main() -> None:
 
         tools_only_prompt = build_tools_only_prompt(text_tokenizer, available_tools)
         tools_only_ids = tok(tools_only_prompt)
-        boundary = find_tools_query_boundary(full_ids, tools_only_ids)
+        boundary = find_tools_query_boundary(full_ids[0].tolist(), tools_only_ids[0].tolist())
 
         is_warmup = idx < args.warmup
         tag = (
@@ -355,36 +345,7 @@ def main() -> None:
     aggregate = aggregate_metrics(per_example)
     quality = compute_quality(per_example, dataset, args.warmup)
 
-    print("\n--- Quality ---")
-    print(f"  accuracy       : {quality.get('tool_accuracy', 0):.2%}")
-    print(f"  invalid rate   : {quality.get('invalid_tool_rate', 0):.2%}")
-    print("\n--- Latency (mean) ---")
-    print(
-        f"  preprocessing  : {aggregate.get('mean_preprocessing_latency_ms')} ms"
-        f" (system prompt + tools list; excluded from TTFT/E2E below)"
-    )
-    print(
-        f"    system prompt: {aggregate.get('mean_system_prefill_latency_ms')} ms"
-        f" ({aggregate.get('mean_system_prefill_tokens')} tok)"
-    )
-    print(
-        f"    tools list   : {aggregate.get('mean_tools_prefill_latency_ms')} ms"
-        f" ({aggregate.get('mean_tools_prefill_tokens')} tok)"
-    )
-    print(f"  TTFT           : {aggregate.get('mean_ttft_ms')} ms (user query only)")
-    print(f"  prefill        : {aggregate.get('mean_prefill_latency_ms')} ms")
-    print(f"  decode         : {aggregate.get('mean_decode_latency_ms')} ms")
-    print(
-        f"  E2E            : {aggregate.get('mean_e2e_latency_ms')} ms"
-        f" (user query + decode only)"
-    )
-    print("\n--- Throughput ---")
-    print(f"  prefill tok/s  : {aggregate.get('mean_prefill_tok_per_sec')}")
-    print(f"  decode tok/s   : {aggregate.get('mean_decode_tok_per_sec')}")
-    print("\n--- Memory ---")
-    print(f"  model file     : {weights_mb:.1f} MB (static, {args.precision})")
-    print(f"  peak RAM       : {aggregate.get('peak_ram_mb')} MB")
-    print(f"  mean KV state  : {aggregate.get('mean_kv_cache_kb')} KB")
+    print_run_summary(aggregate, quality, weights_mb, args.precision)
 
     # ------------------------------------------------------------------
     # Write JSON output
@@ -411,23 +372,7 @@ def main() -> None:
         "qnn_lib_path": args.qnn_lib_path if device == "qnn" else None,
         "transformers_version": transformers.__version__,
         "model_weights_mb": weights_mb,
-        "prefill_split_info": {
-            "enabled": True,
-            "note": (
-                "prefill is measured in 3 phases: system_prefill_* covers "
-                "ingesting the static system prompt, tools_prefill_* covers "
-                "ingesting the available-tools list, query_prefill_* covers "
-                "ingesting the dynamic user query. Both system prompt and "
-                "tools list are treated as pre-processing that happens ahead "
-                "of the live request in production, so ttft_ms/"
-                "prefill_latency_ms/e2e_latency_ms cover ONLY the user-query "
-                "phase (+ decode for e2e); preprocessing_latency_ms is the "
-                "sum of system_prefill_latency_ms + tools_prefill_latency_ms. "
-                "system_prefill_latency_ms is 0 per example because the "
-                "system prompt is cached once (see prefix_cache_info) rather "
-                "than re-ingested every call."
-            ),
-        },
+        "prefill_split_info": build_prefill_split_info(),
         "prefix_cache_info": {
             "prefix_tokens": prefix_len,
             "creation_time_ms": round(prefix_creation_ms, 3),

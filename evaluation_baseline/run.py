@@ -49,10 +49,10 @@ from evaluation_baseline.cache import (
 )
 from evaluation_baseline.inference import (
     TTFTCapture,
-    find_tools_query_boundary,
     run_inference,
 )
 from evaluation_baseline.model_loader import load_model_and_tokenizer
+from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.config import (
     DATASET_DEFAULT,
     MODEL_DISPLAY_NAMES,
@@ -67,6 +67,7 @@ from evaluation_lib.prompt import (
     build_system_prefix_text,
     build_tools_only_prompt,
 )
+from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
 from evaluation_lib.system_info import model_weights_mb
 
 _RESULTS_DIR = _REPO_ROOT / "evaluation_baseline" / "results"
@@ -167,10 +168,7 @@ def main() -> None:
 
     model, tokenizer = load_model_and_tokenizer(args.model, device, args.dtype)
     weights_mb = model_weights_mb(model)
-    print(
-        f"[model] Parameter + buffer size: {weights_mb:.1f} MB"
-        f" ({args.dtype} on {device})\n"
-    )
+    print(f"[model] Parameter + buffer size: {weights_mb:.1f} MB ({args.dtype} on {device})\n")
 
     # ------------------------------------------------------------------
     # Prefix-cache setup (prefix_cache mode only)
@@ -216,10 +214,7 @@ def main() -> None:
             prefix_len = 0
         else:
             prefix_len = computed_prefix_len
-            print(
-                f"[prefix_cache] Prefix alignment verified."
-                f" prefix_len={prefix_len} tokens.\n"
-            )
+            print(f"[prefix_cache] Prefix alignment verified. prefix_len={prefix_len} tokens.\n")
 
     # ------------------------------------------------------------------
     # Inference loop
@@ -244,9 +239,7 @@ def main() -> None:
         )
 
         if mode == "no_cache":
-            timing = run_inference(
-                model, tokenizer, full_ids, mode, device, ttft_capture
-            )
+            timing = run_inference(model, tokenizer, full_ids, mode, device, ttft_capture)
         else:
             # kv_cache & prefix_cache: split prefill into 3 phases -- system
             # prompt, tools list, user query -- timed separately. In
@@ -254,10 +247,8 @@ def main() -> None:
             # many requests while only the query changes per call, so this
             # isolates the true per-request cost (user query + decode).
             tools_only_prompt = build_tools_only_prompt(tokenizer, available_tools)
-            tools_only_ids = tokenizer(
-                tools_only_prompt, return_tensors="pt"
-            ).input_ids.to(device)
-            boundary = find_tools_query_boundary(full_ids, tools_only_ids)
+            tools_only_ids = tokenizer(tools_only_prompt, return_tensors="pt").input_ids.to(device)
+            boundary = find_tools_query_boundary(full_ids[0].tolist(), tools_only_ids[0].tolist())
 
             if mode == "prefix_cache" and prefix_past_kv is not None:
                 # System prompt was already ingested once outside the loop
@@ -329,47 +320,7 @@ def main() -> None:
     aggregate = aggregate_metrics(per_example)
     quality = compute_quality(per_example, dataset, args.warmup)
 
-    print("\n--- Quality ---")
-    print(f"  accuracy       : {quality.get('tool_accuracy', 0):.2%}")
-    print(f"  invalid rate   : {quality.get('invalid_tool_rate', 0):.2%}")
-    print("\n--- Latency (mean) ---")
-    _split_active = aggregate.get("mean_preprocessing_latency_ms") is not None
-    if _split_active:
-        print(
-            f"  preprocessing  : {aggregate.get('mean_preprocessing_latency_ms')} ms"
-            f" (system prompt + tools list; excluded from TTFT/E2E below)"
-        )
-        print(
-            f"    system prompt: {aggregate.get('mean_system_prefill_latency_ms')} ms"
-            f" ({aggregate.get('mean_system_prefill_tokens')} tok)"
-        )
-        print(
-            f"    tools list   : {aggregate.get('mean_tools_prefill_latency_ms')} ms"
-            f" ({aggregate.get('mean_tools_prefill_tokens')} tok)"
-        )
-    _qualifier = " (user query only)" if _split_active else ""
-    print(f"  TTFT           : {aggregate.get('mean_ttft_ms')} ms{_qualifier}")
-    print(f"  prefill        : {aggregate.get('mean_prefill_latency_ms')} ms")
-    print(f"  decode         : {aggregate.get('mean_decode_latency_ms')} ms")
-    _qualifier_e2e = " (user query + decode only)" if _split_active else ""
-    print(
-        f"  E2E            : {aggregate.get('mean_e2e_latency_ms')} ms{_qualifier_e2e}"
-    )
-    print("\n--- Throughput ---")
-    print(f"  prefill tok/s  : {aggregate.get('mean_prefill_tok_per_sec')}")
-    print(f"  decode tok/s   : {aggregate.get('mean_decode_tok_per_sec')}")
-    print("\n--- Memory ---")
-    print(f"  model weights  : {weights_mb:.1f} MB (static, {args.dtype})")
-    print(f"  peak RAM       : {aggregate.get('peak_ram_mb')} MB")
-    print(f"  mean KV cache  : {aggregate.get('mean_kv_cache_kb')} KB")
-    _gpu_note = (
-        "(CUDA: weights+activations+KV peak)"
-        if device == "cuda"
-        else "(MPS: weights+KV post-inference; no peak tracking)"
-    )
-    print(
-        f"  mean peak GPU  : {aggregate.get('mean_peak_gpu_mb')} MB {_gpu_note if aggregate.get('mean_peak_gpu_mb') is not None else '(CPU — N/A)'}"
-    )
+    print_run_summary(aggregate, quality, weights_mb, args.dtype)
 
     # ------------------------------------------------------------------
     # Write JSON output
@@ -396,24 +347,7 @@ def main() -> None:
     }
 
     if mode in ("kv_cache", "prefix_cache"):
-        run_config["prefill_split_info"] = {
-            "enabled": True,
-            "note": (
-                "prefill is measured in 3 phases: system_prefill_* covers "
-                "ingesting the static system prompt, tools_prefill_* covers "
-                "ingesting the available-tools list, query_prefill_* covers "
-                "ingesting the dynamic user query. Both system prompt and "
-                "tools list are treated as pre-processing that happens ahead "
-                "of the live request in production, so ttft_ms/"
-                "prefill_latency_ms/e2e_latency_ms cover ONLY the user-query "
-                "phase (+ decode for e2e); preprocessing_latency_ms is the "
-                "sum of system_prefill_latency_ms + tools_prefill_latency_ms, "
-                "reported separately per example. In prefix_cache mode, "
-                "system_prefill_latency_ms is 0 per example because the "
-                "system prompt is cached once (see prefix_cache_info) rather "
-                "than re-ingested every call."
-            ),
-        }
+        run_config["prefill_split_info"] = build_prefill_split_info()
 
     if mode == "prefix_cache":
         run_config["prefix_cache_info"] = {
@@ -436,8 +370,7 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     out_path = (
-        args.output_dir
-        / f"{args.model}_{args.machine}_{device}_{mode}_{args.dtype}_{ts}.json"
+        args.output_dir / f"{args.model}_{args.machine}_{device}_{mode}_{args.dtype}_{ts}.json"
     )
 
     with open(out_path, "w") as f:

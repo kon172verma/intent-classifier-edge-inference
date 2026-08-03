@@ -9,6 +9,7 @@ import torch
 from transformers import LogitsProcessor, LogitsProcessorList
 
 from evaluation_baseline.cache import kv_cache_bytes, kv_cache_tokens
+from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.config import MAX_NEW_TOKENS
 from evaluation_lib.device import synchronize
 from evaluation_lib.system_info import peak_gpu_memory_mb, reset_peak_gpu_memory
@@ -41,21 +42,6 @@ class TTFTCapture(LogitsProcessor):
             self.ttft_ms = (time.perf_counter() - self._start) * 1000
             self._fired = True
         return scores
-
-
-def find_tools_query_boundary(full_ids: torch.Tensor, tools_only_ids: torch.Tensor) -> int:
-    """Return the index (within *full_ids*) where the user-query tokens begin.
-
-    Computed as the length of the common token prefix between the real
-    prompt's ids and an equivalent prompt built with an empty user request
-    (see ``build_tools_only_prompt``). This is robust to tokenizer merge
-    effects at the boundary, unlike a raw string split on a literal marker.
-    """
-    n = min(full_ids.shape[1], tools_only_ids.shape[1])
-    a = full_ids[0, :n]
-    b = tools_only_ids[0, :n]
-    mismatch = (a != b).nonzero()
-    return int(mismatch[0].item()) if mismatch.numel() > 0 else n
 
 
 def run_inference(

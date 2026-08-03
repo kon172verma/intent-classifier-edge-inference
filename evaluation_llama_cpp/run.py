@@ -66,10 +66,9 @@ from evaluation_llama_cpp.cache import (
     ingest_prefix_segment,
     kv_cache_bytes,
 )
-from evaluation_llama_cpp.inference import (
-    find_tools_query_boundary,
-    run_inference,
-)
+from evaluation_llama_cpp.inference import run_inference
+from evaluation_lib.boundary import find_tools_query_boundary
+from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
 from evaluation_llama_cpp.model_loader import (
     gguf_model_size_mb,
     load_model,
@@ -225,10 +224,7 @@ def main() -> None:
             prefix_len = 0
         else:
             prefix_len = system_len
-            print(
-                f"[prefix_cache] Prefix alignment verified."
-                f" prefix_len={prefix_len} tokens.\n"
-            )
+            print(f"[prefix_cache] Prefix alignment verified. prefix_len={prefix_len} tokens.\n")
 
     # ------------------------------------------------------------------
     # Inference loop
@@ -315,36 +311,7 @@ def main() -> None:
     aggregate = aggregate_metrics(per_example)
     quality = compute_quality(per_example, dataset, args.warmup)
 
-    print("\n--- Quality ---")
-    print(f"  accuracy       : {quality.get('tool_accuracy', 0):.2%}")
-    print(f"  invalid rate   : {quality.get('invalid_tool_rate', 0):.2%}")
-    print("\n--- Latency (mean) ---")
-    print(
-        f"  preprocessing  : {aggregate.get('mean_preprocessing_latency_ms')} ms"
-        f" (system prompt + tools list; excluded from TTFT/E2E below)"
-    )
-    print(
-        f"    system prompt: {aggregate.get('mean_system_prefill_latency_ms')} ms"
-        f" ({aggregate.get('mean_system_prefill_tokens')} tok)"
-    )
-    print(
-        f"    tools list   : {aggregate.get('mean_tools_prefill_latency_ms')} ms"
-        f" ({aggregate.get('mean_tools_prefill_tokens')} tok)"
-    )
-    print(f"  TTFT           : {aggregate.get('mean_ttft_ms')} ms (user query only)")
-    print(f"  prefill        : {aggregate.get('mean_prefill_latency_ms')} ms")
-    print(f"  decode         : {aggregate.get('mean_decode_latency_ms')} ms")
-    print(
-        f"  E2E            : {aggregate.get('mean_e2e_latency_ms')} ms"
-        f" (user query + decode only)"
-    )
-    print("\n--- Throughput ---")
-    print(f"  prefill tok/s  : {aggregate.get('mean_prefill_tok_per_sec')}")
-    print(f"  decode tok/s   : {aggregate.get('mean_decode_tok_per_sec')}")
-    print("\n--- Memory ---")
-    print(f"  model file     : {weights_mb:.1f} MB (static, {args.quant})")
-    print(f"  peak RAM       : {aggregate.get('peak_ram_mb')} MB")
-    print(f"  mean KV state  : {aggregate.get('mean_kv_cache_kb')} KB")
+    print_run_summary(aggregate, quality, weights_mb, args.quant)
 
     # ------------------------------------------------------------------
     # Write JSON output
@@ -367,24 +334,7 @@ def main() -> None:
         "python_version": sys.version,
         "llama_cpp_python_version": llama_cpp.__version__,
         "model_weights_mb": weights_mb,
-        "prefill_split_info": {
-            "enabled": True,
-            "note": (
-                "prefill is measured in 3 phases: system_prefill_* covers "
-                "ingesting the static system prompt, tools_prefill_* covers "
-                "ingesting the available-tools list, query_prefill_* covers "
-                "ingesting the dynamic user query. Both system prompt and "
-                "tools list are treated as pre-processing that happens ahead "
-                "of the live request in production, so ttft_ms/"
-                "prefill_latency_ms/e2e_latency_ms cover ONLY the user-query "
-                "phase (+ decode for e2e); preprocessing_latency_ms is the "
-                "sum of system_prefill_latency_ms + tools_prefill_latency_ms, "
-                "reported separately per example. In prefix_cache mode, "
-                "system_prefill_latency_ms is 0 per example because the "
-                "system prompt is cached once (see prefix_cache_info) rather "
-                "than re-ingested every call."
-            ),
-        },
+        "prefill_split_info": build_prefill_split_info(),
     }
 
     if mode == "prefix_cache":
@@ -393,9 +343,7 @@ def main() -> None:
             "cache_creation_ms": round(prefix_creation_ms, 3),
             "cache_size_bytes": prefix_cache_size_bytes,
             "cache_size_kb": round(prefix_cache_size_bytes / 1024, 2),
-            "note": (
-                "cache_creation_ms is a one-time cost amortised over all examples."
-            ),
+            "note": ("cache_creation_ms is a one-time cost amortised over all examples."),
         }
 
     output_doc = {
@@ -407,8 +355,7 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     out_path = (
-        args.output_dir
-        / f"{args.model}_{args.machine}_{device}_{mode}_{args.quant}_{ts}.json"
+        args.output_dir / f"{args.model}_{args.machine}_{device}_{mode}_{args.quant}_{ts}.json"
     )
 
     with open(out_path, "w") as f:

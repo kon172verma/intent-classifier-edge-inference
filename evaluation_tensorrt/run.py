@@ -57,9 +57,10 @@ from evaluation_lib.prompt import (
 )
 from evaluation_tensorrt.inference import (
     _run_prefill_segment,
-    find_tools_query_boundary,
     run_inference,
 )
+from evaluation_lib.boundary import find_tools_query_boundary
+from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
 from evaluation_tensorrt.model_loader import (
     engine_size_mb,
     load_session,
@@ -139,9 +140,7 @@ def main() -> None:
     weights_mb = engine_size_mb(dir_path)
 
     tok = tokenizer.encode  # callable: str -> list[int]
-    eos_token_ids: set[int] = {
-        int(i) for i in (tokenizer.eos_token_id,) if i is not None
-    }
+    eos_token_ids: set[int] = {int(i) for i in (tokenizer.eos_token_id,) if i is not None}
     if hasattr(tokenizer, "additional_special_tokens_ids"):
         eos_token_ids.update(
             int(i) for i in tokenizer.additional_special_tokens_ids if i is not None
@@ -239,36 +238,7 @@ def main() -> None:
     aggregate = aggregate_metrics(per_example)
     quality = compute_quality(per_example, dataset, args.warmup)
 
-    print("\n--- Quality ---")
-    print(f"  accuracy       : {quality.get('tool_accuracy', 0):.2%}")
-    print(f"  invalid rate   : {quality.get('invalid_tool_rate', 0):.2%}")
-    print("\n--- Latency (mean) ---")
-    print(
-        f"  preprocessing  : {aggregate.get('mean_preprocessing_latency_ms')} ms"
-        f" (system prompt + tools list; excluded from TTFT/E2E)"
-    )
-    print(
-        f"    system prompt: {aggregate.get('mean_system_prefill_latency_ms')} ms"
-        f" ({aggregate.get('mean_system_prefill_tokens')} tok)"
-    )
-    print(
-        f"    tools list   : {aggregate.get('mean_tools_prefill_latency_ms')} ms"
-        f" ({aggregate.get('mean_tools_prefill_tokens')} tok)"
-    )
-    print(f"  TTFT           : {aggregate.get('mean_ttft_ms')} ms (user query only)")
-    print(f"  prefill        : {aggregate.get('mean_prefill_latency_ms')} ms")
-    print(f"  decode         : {aggregate.get('mean_decode_latency_ms')} ms")
-    print(
-        f"  E2E            : {aggregate.get('mean_e2e_latency_ms')} ms"
-        f" (user query + decode only)"
-    )
-    print("\n--- Throughput ---")
-    print(f"  prefill tok/s  : {aggregate.get('mean_prefill_tok_per_sec')}")
-    print(f"  decode tok/s   : {aggregate.get('mean_decode_tok_per_sec')}")
-    print("\n--- Memory ---")
-    print(f"  model file     : {weights_mb:.1f} MB (static, {args.dtype})")
-    print(f"  peak RAM       : {aggregate.get('peak_ram_mb')} MB")
-    print(f"  peak GPU       : {aggregate.get('peak_gpu_mb')} MB")
+    print_run_summary(aggregate, quality, weights_mb, args.dtype)
 
     # ── JSON output ────────────────────────────────────────────────────
     try:
@@ -296,20 +266,7 @@ def main() -> None:
         "python_version": sys.version,
         "tensorrt_llm_version": trt_llm_version,
         "model_weights_mb": weights_mb,
-        "prefill_split_info": {
-            "enabled": True,
-            "note": (
-                "Prefill is measured in 3 phases: system_prefill_* covers "
-                "ingesting the static system prompt (once, before the loop), "
-                "tools_prefill_* covers ingesting the available-tools list, "
-                "query_prefill_* covers the dynamic user query. "
-                "ttft_ms/prefill_latency_ms/e2e_latency_ms cover ONLY the "
-                "user-query phase (+ decode for e2e); preprocessing_latency_ms "
-                "= system_prefill_latency_ms + tools_prefill_latency_ms. "
-                "system_prefill_latency_ms is 0 per example because the "
-                "system prompt is cached once (see prefix_cache_info)."
-            ),
-        },
+        "prefill_split_info": build_prefill_split_info(),
         "prefix_cache_info": {
             "prefix_tokens": system_len,
             "creation_time_ms": round(prefix_creation_ms, 3),
@@ -329,8 +286,7 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     out_path = (
-        args.output_dir
-        / f"{args.model}_{args.machine}_cuda_prefix_cache_{args.dtype}_{ts}.json"
+        args.output_dir / f"{args.model}_{args.machine}_cuda_prefix_cache_{args.dtype}_{ts}.json"
     )
     with open(out_path, "w") as f:
         json.dump(output, f, indent=2)

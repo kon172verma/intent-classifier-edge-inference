@@ -26,6 +26,7 @@ from typing import Any
 
 import torch
 
+from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.config import MAX_NEW_TOKENS
 
 
@@ -33,22 +34,6 @@ def _cuda_sync() -> None:
     """Synchronize the default CUDA device if one is available."""
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-
-
-def find_tools_query_boundary(
-    full_token_ids: list[int], tools_only_token_ids: list[int]
-) -> int:
-    """Return the index where user-query tokens start within *full_token_ids*.
-
-    Uses the longest common prefix between the full prompt and an
-    empty-user-request variant (``build_tools_only_prompt``), mirroring the
-    approach used in evaluation_baseline and evaluation_onnx.
-    """
-    n = min(len(full_token_ids), len(tools_only_token_ids))
-    for i in range(n):
-        if full_token_ids[i] != tools_only_token_ids[i]:
-            return i
-    return n
 
 
 def _run_prefill_segment(
@@ -178,16 +163,12 @@ def run_inference(
         "preprocessing_latency_ms": round(preprocessing_ms, 3),
         "system_prefill_latency_ms": round(system_prefill_ms, 3),
         "system_prefill_tokens": system_prefill_tokens,
-        "system_prefill_tok_per_sec": round(
-            system_prefill_tokens / system_prefill_ms * 1000, 3
-        )
+        "system_prefill_tok_per_sec": round(system_prefill_tokens / system_prefill_ms * 1000, 3)
         if system_prefill_ms > 0
         else None,
         "tools_prefill_latency_ms": round(tools_prefill_ms, 3),
         "tools_prefill_tokens": tools_prefill_tokens,
-        "tools_prefill_tok_per_sec": round(
-            tools_prefill_tokens / tools_prefill_ms * 1000, 3
-        )
+        "tools_prefill_tok_per_sec": round(tools_prefill_tokens / tools_prefill_ms * 1000, 3)
         if tools_prefill_ms > 0
         else None,
         "query_prefill_latency_ms": round(prefill_ms, 3),

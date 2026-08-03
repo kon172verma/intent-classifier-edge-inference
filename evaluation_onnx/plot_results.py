@@ -37,22 +37,16 @@ import json
 import sys
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
-
 _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from evaluation_lib.config import MODEL_DISPLAY_NAMES, ONNX_PRECISIONS
+from evaluation_lib.plot_common import group_reports, load_reports, plot_device_model
 
 _RESULTS_DIR = _REPO_ROOT / "evaluation_onnx" / "results"
 _CHARTS_DIR = _RESULTS_DIR / "charts"
 
-# Row order: fp32 (unquantized baseline) -> fp16 -> dynamic-int8 -> static-int8.
 PRECISION_ORDER = ONNX_PRECISIONS
 PRECISION_LABELS = {
     "fp32": "FP32",
@@ -60,8 +54,6 @@ PRECISION_LABELS = {
     "dynamic-int8": "Dynamic INT8",
     "static-int8": "Static INT8",
 }
-
-_COLORS = ["#4C72B0", "#DD8452", "#55A868", "#C44E52"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -84,250 +76,28 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _load_reports(results_dir: Path) -> list[dict]:
-    """Load all JSON reports under *results_dir*."""
-    reports = []
-    for path in sorted(results_dir.glob("*.json")):
-        try:
-            with open(path) as f:
-                doc = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            continue
-        reports.append(doc)
-    return reports
-
-
-def _group_reports(reports: list[dict]) -> dict:
-    """Group reports by (machine, device) -> model_key -> precision -> latest report."""
-    grouped: dict[tuple[str, str], dict[str, dict[str, dict]]] = {}
-    for doc in reports:
-        rc = doc["run_config"]
-        machine = rc.get("machine", "unknown")
-        device = rc.get("device", "unknown")
-        model_key = rc.get("model_key", "unknown")
-        precision = rc.get("precision", "unknown")
-        ts = rc.get("timestamp_utc", "")
-
-        device_group = (machine, device)
-        grouped.setdefault(device_group, {}).setdefault(model_key, {})
-        existing = grouped[device_group][model_key].get(precision)
-        if existing is None or ts > existing["run_config"].get("timestamp_utc", ""):
-            grouped[device_group][model_key][precision] = doc
-    return grouped
-
-
-def _annotate_bars(ax, bars, fmts: list[str]) -> None:
-    for bar, fmt in zip(bars, fmts):
-        ax.annotate(
-            fmt,
-            xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
-            xytext=(0, 3),
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            fontsize=7,
-        )
-
-
-def _render_panel(
-    ax, labels: list[str], values: list[float], fmts: list[str], log: bool, ylim: tuple
-) -> None:
-    """Render one bar panel with a pre-computed, figure-wide shared y-axis range.
-
-    *ylim* is computed across ALL precision rows for this column beforehand
-    (see _plot_device_model) so that bar heights are visually comparable
-    across rows instead of each row silently rescaling to its own data range.
-    """
-    bars = ax.bar(labels, values, color=_COLORS[: len(labels)])
-    if log:
-        ax.set_yscale("log")
-    ax.set_ylim(*ylim)
-    _annotate_bars(ax, bars, fmts)
-    ax.set_xticklabels([])
-
-
-def _values_preprocessing(aggregate: dict, run_config: dict) -> tuple[list, list]:
-    preprocessing_ms = aggregate.get("mean_preprocessing_latency_ms") or 0.0
-    if (aggregate.get("mean_system_prefill_latency_ms") or 0.0) == 0.0 and run_config.get(
-        "mode"
-    ) == "prefix_cache":
-        cache_info = run_config.get("prefix_cache_info") or {}
-        preprocessing_ms += cache_info.get("creation_time_ms", 0.0)
-    values = [
-        preprocessing_ms,
-        aggregate.get("mean_e2e_latency_ms") or 0.0,
-        aggregate.get("mean_ttft_ms") or 0.0,
-    ]
-    fmts = [f"{v:.0f} ms" for v in values]
-    return values, fmts
-
-
-def _values_phase_breakdown(aggregate: dict, run_config: dict) -> tuple[list, list]:
-    system_ms = aggregate.get("mean_system_prefill_latency_ms") or 0.0
-    # In prefix_cache mode the system prompt is ingested ONCE outside the
-    # per-example loop, so its per-example cost is correctly 0 in the
-    # aggregate -- the real (one-time, amortised) cost lives in
-    # run_config.prefix_cache_info.creation_time_ms instead. Show that
-    # instead of a misleading 0 bar.
-    if system_ms == 0.0 and run_config.get("mode") == "prefix_cache":
-        cache_info = run_config.get("prefix_cache_info") or {}
-        if "creation_time_ms" in cache_info:
-            system_ms = cache_info["creation_time_ms"]
-    values = [
-        system_ms,
-        aggregate.get("mean_tools_prefill_latency_ms") or 0.0,
-        aggregate.get("mean_query_prefill_latency_ms") or 0.0,
-        aggregate.get("mean_decode_latency_ms") or 0.0,
-    ]
-    fmts = [f"{v:.0f} ms" for v in values]
-    return values, fmts
-
-
-def _values_quality_memory(aggregate: dict, quality: dict) -> tuple[list, list]:
-    accuracy_pct = (quality.get("tool_accuracy") or 0.0) * 100
-    peak_ram = aggregate.get("peak_ram_mb") or 0.0
-    kv_cache_mb = (aggregate.get("mean_kv_cache_kb") or 0.0) / 1024
-    peak_gpu = aggregate.get("mean_peak_gpu_mb")
-    # ONNX Runtime/CoreML exposes no cheap live GPU-memory query API, so this
-    # is always None here. Log scale can't render a true 0, so use a small
-    # visible placeholder height so the "N/A" label still shows up.
-    peak_gpu_val = peak_gpu if peak_gpu is not None else 0.15
-
-    values = [accuracy_pct, peak_ram, kv_cache_mb, peak_gpu_val]
-    fmts = [
-        f"{accuracy_pct:.1f}%",
-        f"{peak_ram:.0f}",
-        f"{kv_cache_mb:.1f}",
-        "N/A" if peak_gpu is None else f"{peak_gpu:.0f}",
-    ]
-    return values, fmts
-
-
-_PANELS = [
-    (
-        "Preprocessing / Processing / TTFT (ms)",
-        ["Preprocessing", "Total Processing", "TTFT"],
-        False,
-    ),
-    (
-        "Prefill Phase Breakdown (ms)",
-        ["System Prompt", "Tools List", "User Query", "Decode"],
-        False,
-    ),
-    (
-        "Quality & Memory (log scale)",
-        ["Accuracy %", "Peak RAM MB", "KV Cache MB", "Peak GPU MB"],
-        True,
-    ),
-]
-
-
-def _plot_device_model(
-    machine: str,
-    device: str,
-    model_key: str,
-    precision_docs: dict[str, dict],
-    output_dir: Path,
-) -> None:
-    available_precisions = [p for p in PRECISION_ORDER if p in precision_docs]
-    if not available_precisions:
-        print(
-            f"[plot] ERROR: no precisions available for "
-            f"machine={machine} device={device} model={model_key}. Skipping."
-        )
-        return
-
-    n_rows = len(available_precisions)
-    fig = plt.figure(figsize=(15, 3.2 * n_rows + 1.4))
-    gs = fig.add_gridspec(
-        n_rows + 1, 3, height_ratios=[0.45] + [1] * n_rows, hspace=0.55, wspace=0.35
-    )
-
-    model_name = MODEL_DISPLAY_NAMES.get(model_key, model_key)
-    fig.suptitle(
-        f"{model_name} -- machine={machine}, device={device}",
-        fontsize=13,
-        fontweight="bold",
-        y=0.995,
-    )
-
-    # Dedicated legend row at the top -- one mini-legend per column, shared
-    # across all precision rows below it, so it never overlaps the chart area.
-    for col, (title, labels, _) in enumerate(_PANELS):
-        legend_ax = fig.add_subplot(gs[0, col])
-        legend_ax.axis("off")
-        handles = [Rectangle((0, 0), 1, 1, color=_COLORS[i]) for i in range(len(labels))]
-        legend_ax.legend(
-            handles,
-            labels,
-            loc="center",
-            ncol=2,
-            frameon=False,
-            fontsize=8,
-            title=title,
-            title_fontsize=9,
-        )
-
-    row_values: list = []
-    for precision in available_precisions:
-        doc = precision_docs[precision]
-        aggregate = doc.get("aggregate", {})
-        quality = doc.get("quality", {})
-        doc_run_config = doc.get("run_config", {})
-
-        row_values.append(
-            [
-                _values_preprocessing(aggregate, doc_run_config),
-                _values_phase_breakdown(aggregate, doc_run_config),
-                _values_quality_memory(aggregate, quality),
-            ]
-        )
-
-    # Compute one shared y-axis range PER COLUMN across all precision rows,
-    # so bar heights are visually comparable instead of each row silently
-    # rescaling to its own data range.
-    column_ylims: list[tuple] = []
-    for col, (_, _, log) in enumerate(_PANELS):
-        col_values = [v for row in row_values for v in row[col][0]]
-        col_max = max(col_values) if col_values else 1.0
-        if log:
-            column_ylims.append((0.1, col_max * 3))
-        else:
-            column_ylims.append((0.0, col_max * 1.15))
-
-    for row, precision in enumerate(available_precisions, start=1):
-        for col, (_, labels, log) in enumerate(_PANELS):
-            ax = fig.add_subplot(gs[row, col])
-            values, fmts = row_values[row - 1][col]
-            _render_panel(ax, labels, values, fmts, log, column_ylims[col])
-            if col == 0:
-                ax.set_ylabel(
-                    PRECISION_LABELS.get(precision, precision),
-                    fontsize=12,
-                    fontweight="bold",
-                )
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out_path = output_dir / f"{model_key}_{machine}_{device}.png"
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"[plot] Wrote {out_path}")
-
-
 def main() -> None:
     args = parse_args()
-
-    reports = _load_reports(args.results_dir)
+    reports = load_reports(args.results_dir)
     if not reports:
         print(f"[plot] ERROR: no reports found in {args.results_dir}.")
         return
-
-    grouped = _group_reports(reports)
-
+    grouped = group_reports(reports, "precision")
     for (machine, device), by_model in grouped.items():
         for model_key in MODEL_DISPLAY_NAMES:
-            precision_docs = by_model.get(model_key, {})
-            _plot_device_model(machine, device, model_key, precision_docs, args.output_dir)
+            variant_docs = by_model.get(model_key, {})
+            model_name = MODEL_DISPLAY_NAMES.get(model_key, model_key)
+            out_path = args.output_dir / f"{model_key}_{machine}_{device}.png"
+            plot_device_model(
+                machine,
+                device,
+                model_key,
+                variant_docs,
+                PRECISION_ORDER,
+                PRECISION_LABELS,
+                out_path,
+                suptitle=f"{model_name} -- machine={machine}, device={device}",
+            )
 
 
 if __name__ == "__main__":
