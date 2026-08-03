@@ -33,11 +33,9 @@ from pathlib import Path
 _SAMPLE_DIR = Path(__file__).parent.parent / "dataset_sample"
 sys.path.insert(0, str(_SAMPLE_DIR))
 
-from generate_dataset import (  # type: ignore[import]  # noqa: E402
-    REQUESTS_PER_TOOL,
-    NONE_REQUESTS,
-    load_tools,
+from generate_dataset import (  # type: ignore[import]
     build_example,
+    load_tools,
 )
 
 # ---------------------------------------------------------------------------

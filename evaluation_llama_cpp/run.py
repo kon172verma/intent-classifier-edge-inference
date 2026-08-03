@@ -32,7 +32,7 @@ import argparse
 import json
 import platform
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +44,7 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from evaluation_lib.config import (  # noqa: E402
+from evaluation_lib.config import (
     DATASET_DEFAULT,
     MODEL_DISPLAY_NAMES,
     MODEL_PATHS,
@@ -52,25 +52,25 @@ from evaluation_lib.config import (  # noqa: E402
     QUANT_LEVELS,
     WARMUP_EXAMPLES,
 )
-from evaluation_lib.device import resolve_device  # noqa: E402
-from evaluation_lib.metrics import aggregate_metrics, compute_quality  # noqa: E402
-from evaluation_lib.output_parser import extract_predicted_tool  # noqa: E402
-from evaluation_lib.prompt import (  # noqa: E402
+from evaluation_lib.device import resolve_device
+from evaluation_lib.metrics import aggregate_metrics, compute_quality
+from evaluation_lib.output_parser import extract_predicted_tool
+from evaluation_lib.prompt import (
     build_full_prompt,
     build_system_prefix_text,
     build_tools_only_prompt,
 )
-from evaluation_llama_cpp.cache import (  # noqa: E402
+from evaluation_llama_cpp.cache import (
     clone_prefix_cache,
     compute_prefix_cache,
     ingest_prefix_segment,
     kv_cache_bytes,
 )
-from evaluation_llama_cpp.inference import (  # noqa: E402
+from evaluation_llama_cpp.inference import (
     find_tools_query_boundary,
     run_inference,
 )
-from evaluation_llama_cpp.model_loader import (  # noqa: E402
+from evaluation_llama_cpp.model_loader import (
     gguf_model_size_mb,
     load_model,
     load_text_tokenizer,
@@ -349,7 +349,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Write JSON output
     # ------------------------------------------------------------------
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     run_config: dict[str, Any] = {
         "model_key": args.model,
         "model_name": MODEL_DISPLAY_NAMES[args.model],
@@ -362,7 +362,7 @@ def main() -> None:
         "n_dataset_examples": len(dataset),
         "n_measured_examples": len(per_example),
         "warmup_examples": args.warmup,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": datetime.now(UTC).isoformat(),
         "os": platform.system(),
         "python_version": sys.version,
         "llama_cpp_python_version": llama_cpp.__version__,

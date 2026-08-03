@@ -1,5 +1,11 @@
 # Edge LLM Inference Plan
 
+## Related Repositories
+
+- **Training** — [kon172verma/intent-classifier](https://github.com/kon172verma/intent-classifier) (GitHub): fine-tuning code, configs, reports, and release/merge tooling.
+- **Experiments** — [kon172verma/intent-classifier-experiments](https://huggingface.co/kon172verma/intent-classifier-experiments) (Hugging Face): every adapter produced during experimentation, organized by version.
+- **Release** — [kon172verma/intent-classifier](https://huggingface.co/kon172verma/intent-classifier) (Hugging Face): only the best merged models per release, plus GGUF and ONNX exports (this repo's benchmark input).
+
 ## Purpose
 
 This repository exists to evaluate inference for fine-tuned small language
@@ -21,16 +27,20 @@ Primary target models:
 
 Fine-tuning happens outside this repository.
 
-- A separate GitHub repository is used for fine-tuning code and workflows.
-- A separate Hugging Face repository is the long-term model registry.
-- Today, that Hugging Face repository mainly stores LoRA adapters for the
-  fine-tuned models.
+- [kon172verma/intent-classifier](https://github.com/kon172verma/intent-classifier) (GitHub) is used for fine-tuning code and workflows.
+- [kon172verma/intent-classifier-experiments](https://huggingface.co/kon172verma/intent-classifier-experiments) (Hugging Face) holds every adapter produced during experimentation, versioned by folder.
+- [kon172verma/intent-classifier](https://huggingface.co/kon172verma/intent-classifier) (Hugging Face, the "release" repo) holds only the 2 best merged/unloaded models chosen per release, plus their GGUF and ONNX exports.
+
+Merging and unloading adapters is intent-classifier's responsibility, not this
+repo's (see `release.py` and `scripts/merge_models.py` there). This repo only
+ever *reads* already-merged models.
 
 Inference flow in this repository:
 
-1. Pull base model and LoRA adapter.
-2. Merge adapter into base model with merge_and_unload.
-3. Produce deployable artifacts for runtime comparison.
+1. Pull the merged release model (Transformers format) from the release repo.
+2. Produce deployable artifacts for runtime comparison.
+3. Optionally push the resulting GGUF/ONNX artifacts back to the release repo
+   (via intent-classifier's `release.py --gguf-dir --onnx-dir`).
 
 Artifact targets:
 
@@ -156,7 +166,7 @@ Practical guidance for this repository:
 
 ### Phase 1: Apple Silicon Reference
 
-- Merge adapters and verify parity with adapter-based inference.
+- Download merged release models and verify parity with the reference reports.
 - Build a stable benchmark harness.
 - Record baseline metrics with Transformers.
 
@@ -256,7 +266,7 @@ They can be revisited after the primary runtime matrix is stable and benchmarked
 ## Immediate Next Actions
 
 1. Finalize benchmark harness and dataset schema on Apple Silicon.
-2. Implement adapter merge and parity validation.
+2. Download merged release models and validate parity.
 3. Run baseline and caching benchmarks in Transformers.
 4. Add GGUF and llama.cpp path.
 5. Add ONNX export and ONNX Runtime path.

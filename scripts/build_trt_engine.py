@@ -88,8 +88,7 @@ def _require(cmd: str) -> str:
     path = shutil.which(cmd)
     if path is None:
         raise RuntimeError(
-            f"'{cmd}' not found on PATH. "
-            "Install TensorRT-LLM and ensure its binaries are on PATH."
+            f"'{cmd}' not found on PATH. Install TensorRT-LLM and ensure its binaries are on PATH."
         )
     return path
 
@@ -104,7 +103,7 @@ def _find_convert_script(arch: str) -> Path:
             "See https://nvidia.github.io/TensorRT-LLM/installation/linux.html"
         ) from exc
 
-    pkg_root = Path(tensorrt_llm.__file__).parent
+    pkg_root = Path(tensorrt_llm.__file__).parent  # type: ignore[arg-type]
     candidates = [
         pkg_root / "examples" / arch / "convert_checkpoint.py",
         # Some trtllm distributions install examples one level up
@@ -159,14 +158,11 @@ def _dtype_to_build_args(dtype: str) -> list[str]:
     return []
 
 
-def build(
-    model_key: str, dtype: str, tp: int, max_seq_len: int, device_sm: str | None
-) -> None:
+def build(model_key: str, dtype: str, tp: int, max_seq_len: int, device_sm: str | None) -> None:
     """Run the full convert → build pipeline for *model_key* at *dtype*."""
     if device_sm is not None and device_sm in _NO_BF16_SM and dtype == "bf16":
         raise ValueError(
-            f"BF16 is not supported on {device_sm} (Volta architecture). "
-            "Use fp16 or int8 instead."
+            f"BF16 is not supported on {device_sm} (Volta architecture). Use fp16 or int8 instead."
         )
     model_path = MODEL_PATHS[model_key]
     stem = MODEL_TENSORRT_STEMS[model_key]

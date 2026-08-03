@@ -8,9 +8,8 @@ from typing import Any
 from evaluation_lib.config import (
     MODEL_DISPLAY_NAMES,
     MODEL_PATHS,
-    TENSORRT_DIR,
     MODEL_TENSORRT_STEMS,
-    TENSORRT_DTYPES,
+    TENSORRT_DIR,
 )
 
 

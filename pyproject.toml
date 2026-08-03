@@ -1,0 +1,17 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["*.ipynb", "scripts/llama.cpp-src", "models", ".venv-onnx", ".venv-convert"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "RUF"]
+ignore = [
+    "E501",   # line length handled by formatter/line-length above, not hard-enforced
+    "E402",   # every eval/*, scripts/* module does sys.path.insert() before local imports
+    "RUF001", # ambiguous unicode in strings (deliberate console-output style)
+    "RUF002", # ambiguous unicode in docstrings (same)
+    "RUF003", # ambiguous unicode in comments (same)
+    "B905",   # zip() without strict= (pairs constructed with equal length here)
+]
+
+[tool.ruff.lint.per-file-ignores]

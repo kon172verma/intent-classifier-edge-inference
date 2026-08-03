@@ -41,6 +41,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
 _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -147,9 +148,9 @@ def _render_panel(
 
 def _values_preprocessing(aggregate: dict, run_config: dict) -> tuple[list, list]:
     preprocessing_ms = aggregate.get("mean_preprocessing_latency_ms") or 0.0
-    if (
-        aggregate.get("mean_system_prefill_latency_ms") or 0.0
-    ) == 0.0 and run_config.get("mode") == "prefix_cache":
+    if (aggregate.get("mean_system_prefill_latency_ms") or 0.0) == 0.0 and run_config.get(
+        "mode"
+    ) == "prefix_cache":
         cache_info = run_config.get("prefix_cache_info") or {}
         preprocessing_ms += cache_info.get("creation_time_ms", 0.0)
     values = [
@@ -255,9 +256,7 @@ def _plot_device_model(
     for col, (title, labels, _) in enumerate(_PANELS):
         legend_ax = fig.add_subplot(gs[0, col])
         legend_ax.axis("off")
-        handles = [
-            plt.Rectangle((0, 0), 1, 1, color=_COLORS[i]) for i in range(len(labels))
-        ]
+        handles = [Rectangle((0, 0), 1, 1, color=_COLORS[i]) for i in range(len(labels))]
         legend_ax.legend(
             handles,
             labels,
@@ -328,9 +327,7 @@ def main() -> None:
     for (machine, device), by_model in grouped.items():
         for model_key in MODEL_DISPLAY_NAMES:
             precision_docs = by_model.get(model_key, {})
-            _plot_device_model(
-                machine, device, model_key, precision_docs, args.output_dir
-            )
+            _plot_device_model(machine, device, model_key, precision_docs, args.output_dir)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,8 @@ for their respective backends.
 from __future__ import annotations
 
 import time
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, cast
 
 import numpy as np
 import onnxruntime as ort
@@ -74,7 +75,7 @@ def clone_cache(cache: Cache) -> Cache:
     return {name: arr.copy() for name, arr in cache.items()}
 
 
-def _present_to_past(outputs: dict[str, np.ndarray]) -> Cache:
+def _present_to_past(outputs: Mapping[str, np.ndarray]) -> Cache:
     """Rename ``present.<N>.key/value`` outputs to ``past_key_values.<N>.key/value``
     so they can be fed directly back in as the next call's cache input.
     """
@@ -132,7 +133,9 @@ def run_segment(
     outputs = session.run(output_names, feed)
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
-    output_map = dict(zip(output_names, outputs))
+    output_map: dict[str, np.ndarray] = cast(
+        dict[str, np.ndarray], dict(zip(output_names, outputs))
+    )
     logits = output_map["logits"]
     new_cache = _present_to_past(output_map)
     return new_cache, logits, elapsed_ms

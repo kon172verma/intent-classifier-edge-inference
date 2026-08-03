@@ -35,7 +35,7 @@ class TTFTCapture(LogitsProcessor):
         self._fired = False
         self.ttft_ms = None
 
-    def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
+    def __call__(self, input_ids: torch.Tensor, scores: torch.FloatTensor) -> torch.FloatTensor:
         if not self._fired and self._start is not None:
             synchronize(self._device)
             self.ttft_ms = (time.perf_counter() - self._start) * 1000
@@ -43,9 +43,7 @@ class TTFTCapture(LogitsProcessor):
         return scores
 
 
-def find_tools_query_boundary(
-    full_ids: torch.Tensor, tools_only_ids: torch.Tensor
-) -> int:
+def find_tools_query_boundary(full_ids: torch.Tensor, tools_only_ids: torch.Tensor) -> int:
     """Return the index (within *full_ids*) where the user-query tokens begin.
 
     Computed as the length of the common token prefix between the real
@@ -148,9 +146,7 @@ def run_inference(
     # in a real deployment both are done ahead of time, so only the
     # user-query phase reflects true per-request latency.
     call_e2e_ms = (t_end - t_start) * 1000
-    query_prefill_ms = (
-        ttft_capture.ttft_ms if ttft_capture.ttft_ms is not None else call_e2e_ms
-    )
+    query_prefill_ms = ttft_capture.ttft_ms if ttft_capture.ttft_ms is not None else call_e2e_ms
     decode_ms = max(0.0, call_e2e_ms - query_prefill_ms)
 
     preprocessing_ms = system_prefill_ms + tools_prefill_ms
@@ -163,18 +159,14 @@ def run_inference(
         (input_ids.shape[1] / query_prefill_ms * 1000) if query_prefill_ms > 0 else None
     )
     decode_tok_per_sec = (
-        ((n_generated - 1) / decode_ms * 1000)
-        if decode_ms > 0 and n_generated > 1
-        else None
+        ((n_generated - 1) / decode_ms * 1000) if decode_ms > 0 and n_generated > 1 else None
     )
 
     final_cache = getattr(result, "past_key_values", None)
     kv_bytes = kv_cache_bytes(final_cache) if use_cache else 0
 
     new_ids = result.sequences[0, input_ids.shape[1] :].tolist()
-    generated_text = tokenizer.decode(
-        [int(i) for i in new_ids], skip_special_tokens=True
-    )
+    generated_text = tokenizer.decode([int(i) for i in new_ids], skip_special_tokens=True)
 
     output = {
         "generated_text": generated_text.strip(),
@@ -197,19 +189,13 @@ def run_inference(
     if report_prefill_split:
         query_prefill_tokens = input_ids.shape[1]
         system_tok_per_sec = (
-            (system_prefill_tokens / system_prefill_ms * 1000)
-            if system_prefill_ms > 0
-            else None
+            (system_prefill_tokens / system_prefill_ms * 1000) if system_prefill_ms > 0 else None
         )
         tools_tok_per_sec = (
-            (tools_prefill_tokens / tools_prefill_ms * 1000)
-            if tools_prefill_ms > 0
-            else None
+            (tools_prefill_tokens / tools_prefill_ms * 1000) if tools_prefill_ms > 0 else None
         )
         query_tok_per_sec = (
-            (query_prefill_tokens / query_prefill_ms * 1000)
-            if query_prefill_ms > 0
-            else None
+            (query_prefill_tokens / query_prefill_ms * 1000) if query_prefill_ms > 0 else None
         )
         output.update(
             {
@@ -217,23 +203,17 @@ def run_inference(
                 "system_prefill_latency_ms": round(system_prefill_ms, 3),
                 "system_prefill_tokens": system_prefill_tokens,
                 "system_prefill_tok_per_sec": (
-                    round(system_tok_per_sec, 2)
-                    if system_tok_per_sec is not None
-                    else None
+                    round(system_tok_per_sec, 2) if system_tok_per_sec is not None else None
                 ),
                 "tools_prefill_latency_ms": round(tools_prefill_ms, 3),
                 "tools_prefill_tokens": tools_prefill_tokens,
                 "tools_prefill_tok_per_sec": (
-                    round(tools_tok_per_sec, 2)
-                    if tools_tok_per_sec is not None
-                    else None
+                    round(tools_tok_per_sec, 2) if tools_tok_per_sec is not None else None
                 ),
                 "query_prefill_latency_ms": round(query_prefill_ms, 3),
                 "query_prefill_tokens": query_prefill_tokens,
                 "query_prefill_tok_per_sec": (
-                    round(query_tok_per_sec, 2)
-                    if query_tok_per_sec is not None
-                    else None
+                    round(query_tok_per_sec, 2) if query_tok_per_sec is not None else None
                 ),
             }
         )

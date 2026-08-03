@@ -96,14 +96,12 @@ def _non_weight_matmul_names(model_path: Path) -> list[str]:
     excluded = [
         n.name
         for n in model.graph.node
-        if n.op_type == "MatMul"
-        and not any(inp in initializer_names for inp in n.input)
+        if n.op_type == "MatMul" and not any(inp in initializer_names for inp in n.input)
     ]
     excluded += [
         n.name
         for n in model.graph.node
-        if n.op_type == "MatMul"
-        and (n.name == "/lm_head/MatMul" or "down_proj" in n.name)
+        if n.op_type == "MatMul" and (n.name == "/lm_head/MatMul" or "down_proj" in n.name)
     ]
     return excluded
 
@@ -145,9 +143,7 @@ class PrefillCalibrationReader(CalibrationDataReader):
         with open(DATASET_DEFAULT) as f:
             dataset = json.load(f)
         self._prompts = [
-            build_full_prompt(
-                self._tokenizer, ex["user_request"], ex["available_tools"]
-            )
+            build_full_prompt(self._tokenizer, ex["user_request"], ex["available_tools"])
             for ex in dataset[:n_samples]
         ]
         self._past_specs = _past_kv_input_names(model_path)
@@ -155,13 +151,10 @@ class PrefillCalibrationReader(CalibrationDataReader):
 
         if self._tokenizer.pad_token_id is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
-        all_ids = [
-            self._tokenizer(text, return_tensors="np").input_ids
-            for text in self._prompts
-        ]
+        all_ids = [self._tokenizer(text, return_tensors="np").input_ids for text in self._prompts]
         self._calib_seq_len = max(ids.shape[1] for ids in all_ids)
 
-    def get_next(self) -> dict[str, np.ndarray] | None:
+    def get_next(self) -> dict[str, np.ndarray] | None:  # type: ignore[override]
         if self._idx >= len(self._prompts):
             return None
         text = self._prompts[self._idx]
@@ -172,9 +165,7 @@ class PrefillCalibrationReader(CalibrationDataReader):
         pad_len = self._calib_seq_len - real_len
         if pad_len > 0:
             pad_id = self._tokenizer.pad_token_id
-            ids = np.concatenate(
-                [ids, np.full((1, pad_len), pad_id, dtype=np.int64)], axis=1
-            )
+            ids = np.concatenate([ids, np.full((1, pad_len), pad_id, dtype=np.int64)], axis=1)
         seq_len = ids.shape[1]
         attention_mask = np.ones((1, seq_len), dtype=np.int64)
         if pad_len > 0:

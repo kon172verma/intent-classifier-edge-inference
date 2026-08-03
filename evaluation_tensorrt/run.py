@@ -30,7 +30,7 @@ import json
 import platform
 import sys
 import tracemalloc
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -278,7 +278,7 @@ def main() -> None:
     except ImportError:
         trt_llm_version = None
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     run_config: dict[str, Any] = {
         "model_key": args.model,
         "model_name": MODEL_DISPLAY_NAMES[args.model],
@@ -291,7 +291,7 @@ def main() -> None:
         "n_dataset_examples": len(dataset),
         "n_measured_examples": len(per_example),
         "warmup_examples": args.warmup,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": datetime.now(UTC).isoformat(),
         "os": platform.system(),
         "python_version": sys.version,
         "tensorrt_llm_version": trt_llm_version,

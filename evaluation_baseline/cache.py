@@ -10,7 +10,6 @@ import torch
 from evaluation_lib.device import synchronize
 from evaluation_lib.prompt import build_system_prefix_text
 
-
 # ---------------------------------------------------------------------------
 # KV-cache inspection
 # ---------------------------------------------------------------------------

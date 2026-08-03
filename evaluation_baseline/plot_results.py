@@ -36,18 +36,18 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
 _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from evaluation_lib.config import MODEL_DISPLAY_NAMES  # noqa: E402
+from evaluation_lib.config import MODEL_DISPLAY_NAMES
 
 _RESULTS_DIR = _REPO_ROOT / "evaluation_baseline" / "results"
 _CHARTS_DIR = _RESULTS_DIR / "charts"
@@ -158,9 +158,9 @@ def _values_preprocessing(aggregate: dict, run_config: dict) -> tuple[list, list
     # Same one-time-cost substitution as _values_phase_breakdown: fold in the
     # real system-prompt cache-creation cost for prefix_cache mode instead
     # of the (correctly) zeroed-out per-example system_prefill_latency_ms.
-    if (
-        aggregate.get("mean_system_prefill_latency_ms") or 0.0
-    ) == 0.0 and run_config.get("mode") == "prefix_cache":
+    if (aggregate.get("mean_system_prefill_latency_ms") or 0.0) == 0.0 and run_config.get(
+        "mode"
+    ) == "prefix_cache":
         cache_info = run_config.get("prefix_cache_info") or {}
         preprocessing_ms += cache_info.get("cache_creation_ms", 0.0)
     values = [
@@ -168,7 +168,7 @@ def _values_preprocessing(aggregate: dict, run_config: dict) -> tuple[list, list
         aggregate.get("mean_e2e_latency_ms") or 0.0,
         aggregate.get("mean_ttft_ms") or 0.0,
     ]
-    fmts = ["{:.0f} ms".format(v) for v in values]
+    fmts = [f"{v:.0f} ms" for v in values]
     return values, fmts
 
 
@@ -189,7 +189,7 @@ def _values_phase_breakdown(aggregate: dict, run_config: dict) -> tuple[list, li
         aggregate.get("mean_query_prefill_latency_ms") or 0.0,
         aggregate.get("mean_decode_latency_ms") or 0.0,
     ]
-    fmts = ["{:.0f} ms".format(v) for v in values]
+    fmts = [f"{v:.0f} ms" for v in values]
     return values, fmts
 
 
@@ -204,10 +204,10 @@ def _values_quality_memory(aggregate: dict, quality: dict) -> tuple[list, list]:
 
     values = [accuracy_pct, peak_ram, kv_cache_mb, peak_gpu_val]
     fmts = [
-        "{:.1f}%".format(accuracy_pct),
-        "{:.0f}".format(peak_ram),
-        "{:.1f}".format(kv_cache_mb),
-        "N/A" if peak_gpu is None else "{:.0f}".format(peak_gpu),
+        f"{accuracy_pct:.1f}%",
+        f"{peak_ram:.0f}",
+        f"{kv_cache_mb:.1f}",
+        "N/A" if peak_gpu is None else f"{peak_gpu:.0f}",
     ]
     return values, fmts
 
@@ -266,9 +266,7 @@ def _plot_device_model(
     for col, (title, labels, _) in enumerate(_PANELS):
         legend_ax = fig.add_subplot(gs[0, col])
         legend_ax.axis("off")
-        handles = [
-            plt.Rectangle((0, 0), 1, 1, color=_COLORS[i]) for i in range(len(labels))
-        ]
+        handles = [Rectangle((0, 0), 1, 1, color=_COLORS[i]) for i in range(len(labels))]
         legend_ax.legend(
             handles,
             labels,
@@ -281,7 +279,7 @@ def _plot_device_model(
         )
 
     row_values: list = []
-    for row, dtype in enumerate(available_dtypes, start=1):
+    for _row, dtype in enumerate(available_dtypes, start=1):
         doc = dtype_docs[dtype]
         aggregate = doc.get("aggregate", {})
         quality = doc.get("quality", {})
@@ -314,9 +312,7 @@ def _plot_device_model(
             values, fmts = row_values[row - 1][col]
             _render_panel(ax, labels, values, fmts, log, column_ylims[col])
             if col == 0:
-                ax.set_ylabel(
-                    DTYPE_LABELS.get(dtype, dtype), fontsize=12, fontweight="bold"
-                )
+                ax.set_ylabel(DTYPE_LABELS.get(dtype, dtype), fontsize=12, fontweight="bold")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     out_path = output_dir / f"{model_key}_{machine}_{device}_{mode}.png"
@@ -330,10 +326,7 @@ def main() -> None:
 
     reports = _load_reports(args.results_dir, args.mode)
     if not reports:
-        print(
-            f"[plot] ERROR: no reports found for mode={args.mode} in "
-            f"{args.results_dir}."
-        )
+        print(f"[plot] ERROR: no reports found for mode={args.mode} in {args.results_dir}.")
         return
 
     grouped = _group_reports(reports)
@@ -341,9 +334,7 @@ def main() -> None:
     for (machine, device), by_model in grouped.items():
         for model_key in MODEL_DISPLAY_NAMES:
             dtype_docs = by_model.get(model_key, {})
-            _plot_device_model(
-                machine, device, model_key, dtype_docs, args.mode, args.output_dir
-            )
+            _plot_device_model(machine, device, model_key, dtype_docs, args.mode, args.output_dir)
 
 
 if __name__ == "__main__":
