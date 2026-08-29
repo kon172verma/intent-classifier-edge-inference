@@ -38,16 +38,17 @@ scripts/.venv-onnx/bin/pip install --upgrade pip
 scripts/.venv-onnx/bin/pip install "optimum[onnxruntime]" onnxruntime
 
 # 2. Export each HF checkpoint to ONNX (FP32 base + FP16 variant)
-mkdir -p models/onnx
+mkdir -p models/qwen3-0.6b_LoRA_C_1k_merged/onnx
+mkdir -p models/llama3.2-1b_LoRA_C_1k_merged/onnx
 for dtype in fp32 fp16; do
   scripts/.venv-onnx/bin/optimum-cli export onnx \
-      -m models/intent-classifier-qwen3-0.6b_C_1k_merged \
+    -m models/qwen3-0.6b_LoRA_C_1k_merged/safetensors \
       --task text-generation-with-past --dtype ${dtype} \
-      models/onnx/qwen3-0.6b-${dtype}
+    models/qwen3-0.6b_LoRA_C_1k_merged/onnx/${dtype}
   scripts/.venv-onnx/bin/optimum-cli export onnx \
-      -m models/intent-classifier-llama3.2-1b_C_1k_merged \
+    -m models/llama3.2-1b_LoRA_C_1k_merged/safetensors \
       --task text-generation-with-past --dtype ${dtype} \
-      models/onnx/llama3.2-1b-${dtype}
+    models/llama3.2-1b_LoRA_C_1k_merged/onnx/${dtype}
 done
 
 # 3. Quantize (dynamic-int8 + static-int8), using the MAIN venv
@@ -55,7 +56,10 @@ done
 .venv/bin/python scripts/quantize_onnx.py --model llama3
 ```
 
-This produces `models/onnx/{qwen3-0.6b,llama3.2-1b}-{fp32,fp16,dynamic-int8,static-int8}/model.onnx`.
+This produces:
+
+- `models/qwen3-0.6b_LoRA_C_1k_merged/onnx/{fp32,fp16,dynamic-int8,static-int8}/model.onnx`
+- `models/llama3.2-1b_LoRA_C_1k_merged/onnx/{fp32,fp16,dynamic-int8,static-int8}/model.onnx`
 
 ## Python bindings
 

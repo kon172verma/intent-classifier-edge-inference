@@ -6,9 +6,13 @@ from pathlib import Path
 
 REPO_ROOT: Path = Path(__file__).parent.parent
 
+MODEL_RUNS: dict[str, str] = {
+    "qwen3": "qwen3-0.6b_LoRA_C_1k",
+    "llama3": "llama3.2-1b_LoRA_C_1k",
+}
+
 MODEL_PATHS: dict[str, Path] = {
-    "qwen3": REPO_ROOT / "models" / "intent-classifier-qwen3-0.6b_C_1k_merged",
-    "llama3": REPO_ROOT / "models" / "intent-classifier-llama3.2-1b_C_1k_merged",
+    key: REPO_ROOT / "models" / f"{run}_merged" / "safetensors" for key, run in MODEL_RUNS.items()
 }
 
 MODEL_DISPLAY_NAMES: dict[str, str] = {
@@ -22,9 +26,10 @@ MAX_NEW_TOKENS: int = 32
 WARMUP_EXAMPLES: int = 2
 
 # GGUF model files for the llama.cpp evaluation (see evaluation_llama_cpp/).
-# Filenames follow <stem>-<QUANT>.gguf, produced by convert_hf_to_gguf.py +
-# llama-quantize (see evaluation_llama_cpp/readme.md for the conversion steps).
-GGUF_DIR: Path = REPO_ROOT / "models" / "gguf"
+# Filenames follow <stem>-<QUANT>.gguf inside each model's gguf/ subfolder.
+MODEL_GGUF_DIRS: dict[str, Path] = {
+    key: REPO_ROOT / "models" / f"{run}_merged" / "gguf" for key, run in MODEL_RUNS.items()
+}
 
 MODEL_GGUF_STEMS: dict[str, str] = {
     "qwen3": "qwen3-0.6b",
@@ -36,9 +41,11 @@ QUANT_LEVELS: list[str] = ["Q8_0", "Q6_K", "Q4_K_M"]
 
 N_CTX_DEFAULT: int = 2048
 
-# ONNX model directory for the evaluation_onnx evaluation (see
-# evaluation_onnx/readme.md for the export + quantization steps).
-ONNX_DIR: Path = REPO_ROOT / "models" / "onnx"
+# ONNX model directories for the evaluation_onnx benchmark. Precision
+# directories live under each model's onnx/ subfolder.
+MODEL_ONNX_DIRS: dict[str, Path] = {
+    key: REPO_ROOT / "models" / f"{run}_merged" / "onnx" for key, run in MODEL_RUNS.items()
+}
 
 MODEL_ONNX_STEMS: dict[str, str] = {
     "qwen3": "qwen3-0.6b",
@@ -46,8 +53,7 @@ MODEL_ONNX_STEMS: dict[str, str] = {
 }
 
 # Precision variants benchmarked for evaluation_onnx. Directory names follow
-# <stem>-<PRECISION>/model.onnx, produced by scripts/quantize_onnx.py (and
-# optimum-cli export onnx for the fp32/fp16 base exports).
+# <precision>/model.onnx under MODEL_ONNX_DIRS[model_key].
 ONNX_PRECISIONS: list[str] = ["fp32", "fp16", "dynamic-int8", "static-int8"]
 
 # TensorRT-LLM engine directory for the evaluation_tensorrt evaluation (see

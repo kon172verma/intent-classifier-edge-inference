@@ -7,7 +7,7 @@ from typing import Any
 
 import onnxruntime as ort
 
-from evaluation_lib.config import MODEL_DISPLAY_NAMES, MODEL_ONNX_STEMS, ONNX_DIR
+from evaluation_lib.config import MODEL_DISPLAY_NAMES, MODEL_ONNX_DIRS
 
 # Execution providers to try, in priority order, per --device value. ORT
 # falls back to the next provider in the list for any op it can't run on
@@ -77,8 +77,7 @@ def _qnn_providers(backend: str, precision: str, lib_path: str | None) -> list:
 
 def onnx_model_path(model_key: str, precision: str) -> Path:
     """Return the ``model.onnx`` path for *model_key* at *precision*."""
-    stem = MODEL_ONNX_STEMS[model_key]
-    return ONNX_DIR / f"{stem}-{precision}" / "model.onnx"
+    return MODEL_ONNX_DIRS[model_key] / precision / "model.onnx"
 
 
 def onnx_model_size_mb(model_key: str, precision: str) -> float:
@@ -146,9 +145,7 @@ def load_session(
     )
     sess_options = ort.SessionOptions()
     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    session = ort.InferenceSession(
-        str(model_path), sess_options=sess_options, providers=providers
-    )
+    session = ort.InferenceSession(str(model_path), sess_options=sess_options, providers=providers)
     print(f"[model] Ready. (active providers: {session.get_providers()})\n")
     return session
 
@@ -161,6 +158,4 @@ def load_text_tokenizer(model_path: Any) -> Any:
     """
     from transformers import AutoTokenizer
 
-    return AutoTokenizer.from_pretrained(
-        str(model_path), clean_up_tokenization_spaces=False
-    )
+    return AutoTokenizer.from_pretrained(str(model_path), clean_up_tokenization_spaces=False)

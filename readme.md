@@ -2,7 +2,7 @@
 
 ## Related Repositories
 
-- **Training** — [kon172verma/intent-classifier](https://github.com/kon172verma/intent-classifier) (GitHub): fine-tuning code, configs, reports, and release/merge tooling.
+- **Training** — [kon172verma/intent-classifier](https://github.com/kon172verma/intent-classifier) (GitHub): fine-tuning code, configs, and reports.
 - **Experiments** — [kon172verma/intent-classifier-experiments](https://huggingface.co/kon172verma/intent-classifier-experiments) (Hugging Face): every adapter produced during experimentation, organized by version.
 - **Release** — [kon172verma/intent-classifier](https://huggingface.co/kon172verma/intent-classifier) (Hugging Face): only the best merged models per release, plus GGUF and ONNX exports (this repo's benchmark input).
 
@@ -31,16 +31,15 @@ Fine-tuning happens outside this repository.
 - [kon172verma/intent-classifier-experiments](https://huggingface.co/kon172verma/intent-classifier-experiments) (Hugging Face) holds every adapter produced during experimentation, versioned by folder.
 - [kon172verma/intent-classifier](https://huggingface.co/kon172verma/intent-classifier) (Hugging Face, the "release" repo) holds only the 2 best merged/unloaded models chosen per release, plus their GGUF and ONNX exports.
 
-Merging and unloading adapters is intent-classifier's responsibility, not this
-repo's (see `release.py` and `scripts/merge_models.py` there). This repo only
-ever *reads* already-merged models.
+Merging and unloading adapters is handled in this repository under
+`release_scripts/`.
 
 Inference flow in this repository:
 
 1. Pull the merged release model (Transformers format) from the release repo.
 2. Produce deployable artifacts for runtime comparison.
-3. Optionally push the resulting GGUF/ONNX artifacts back to the release repo
-   (via intent-classifier's `release.py --gguf-dir --onnx-dir`).
+3. Optionally push resulting artifacts back to the release repo via
+  `release_scripts/release.py --runs <model_key>_<technique>_<config>_<size>`.
 
 Artifact targets:
 

@@ -9,8 +9,8 @@ from typing import Any
 from llama_cpp import Llama
 
 from evaluation_lib.config import (
-    GGUF_DIR,
     MODEL_DISPLAY_NAMES,
+    MODEL_GGUF_DIRS,
     MODEL_GGUF_STEMS,
     N_CTX_DEFAULT,
 )
@@ -19,12 +19,10 @@ from evaluation_lib.config import (
 def gguf_model_path(model_key: str, quant: str) -> Path:
     """Return the expected GGUF file path for *model_key* at *quant* level."""
     stem = MODEL_GGUF_STEMS[model_key]
-    return GGUF_DIR / f"{stem}-{quant}.gguf"
+    return MODEL_GGUF_DIRS[model_key] / f"{stem}-{quant}.gguf"
 
 
-def load_model(
-    model_key: str, quant: str, device: str, n_ctx: int = N_CTX_DEFAULT
-) -> Llama:
+def load_model(model_key: str, quant: str, device: str, n_ctx: int = N_CTX_DEFAULT) -> Llama:
     """Load the quantized GGUF model for *model_key* at *quant* level.
 
     Parameters

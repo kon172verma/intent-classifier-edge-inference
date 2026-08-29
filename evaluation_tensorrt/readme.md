@@ -59,8 +59,8 @@ device with a compatible NVIDIA GPU.
 ### 2. Copy the HF checkpoints to the target device
 
 ```bash
-scp -r models/intent-classifier-qwen3-0.6b_C_1k_merged  jetson:/path/to/project/models/
-scp -r models/intent-classifier-llama3.2-1b_C_1k_merged  jetson:/path/to/project/models/
+scp -r models/qwen3-0.6b_LoRA_C_1k_merged  jetson:/path/to/project/models/
+scp -r models/llama3.2-1b_LoRA_C_1k_merged  jetson:/path/to/project/models/
 ```
 
 ### 3. Build the TensorRT engine

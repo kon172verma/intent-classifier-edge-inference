@@ -43,25 +43,32 @@ pip install -r scripts/llama.cpp-src/requirements/requirements-convert_hf_to_ggu
 pip install -U transformers   # tokenizer_config.json format needs a recent version
 
 # 4. Convert each HF checkpoint to GGUF (fp16 base, before quantization)
-mkdir -p models/gguf
+mkdir -p models/qwen3-0.6b_LoRA_C_1k_merged/gguf
+mkdir -p models/llama3.2-1b_LoRA_C_1k_merged/gguf
 python scripts/llama.cpp-src/convert_hf_to_gguf.py \
-    models/intent-classifier-qwen3-0.6b_C_1k_merged \
-    --outfile models/gguf/qwen3-0.6b-f16.gguf --outtype f16
+  models/qwen3-0.6b_LoRA_C_1k_merged/safetensors \
+  --outfile models/qwen3-0.6b_LoRA_C_1k_merged/gguf/qwen3-0.6b-f16.gguf --outtype f16
 python scripts/llama.cpp-src/convert_hf_to_gguf.py \
-    models/intent-classifier-llama3.2-1b_C_1k_merged \
-    --outfile models/gguf/llama3.2-1b-f16.gguf --outtype f16
+  models/llama3.2-1b_LoRA_C_1k_merged/safetensors \
+  --outfile models/llama3.2-1b_LoRA_C_1k_merged/gguf/llama3.2-1b-f16.gguf --outtype f16
 
 deactivate
 
 # 5. Quantize to Q8_0 / Q6_K / Q4_K_M using the brew-installed llama-quantize
-cd models/gguf
 for q in Q8_0 Q6_K Q4_K_M; do
-  llama-quantize qwen3-0.6b-f16.gguf qwen3-0.6b-${q}.gguf ${q}
-  llama-quantize llama3.2-1b-f16.gguf llama3.2-1b-${q}.gguf ${q}
+  llama-quantize \
+    models/qwen3-0.6b_LoRA_C_1k_merged/gguf/qwen3-0.6b-f16.gguf \
+    models/qwen3-0.6b_LoRA_C_1k_merged/gguf/qwen3-0.6b-${q}.gguf ${q}
+  llama-quantize \
+    models/llama3.2-1b_LoRA_C_1k_merged/gguf/llama3.2-1b-f16.gguf \
+    models/llama3.2-1b_LoRA_C_1k_merged/gguf/llama3.2-1b-${q}.gguf ${q}
 done
 ```
 
-This produces `models/gguf/{qwen3-0.6b,llama3.2-1b}-{Q8_0,Q6_K,Q4_K_M}.gguf`.
+This produces:
+
+- `models/qwen3-0.6b_LoRA_C_1k_merged/gguf/qwen3-0.6b-{Q8_0,Q6_K,Q4_K_M}.gguf`
+- `models/llama3.2-1b_LoRA_C_1k_merged/gguf/llama3.2-1b-{Q8_0,Q6_K,Q4_K_M}.gguf`
 
 ## Python bindings
 

@@ -13,8 +13,8 @@ version):
 
 Produces
 --------
-    models/onnx/<stem>-dynamic-int8/model.onnx
-    models/onnx/<stem>-static-int8/model.onnx
+    models/<model-run>_merged/onnx/dynamic-int8/model.onnx
+    models/<model-run>_merged/onnx/static-int8/model.onnx
 
 Static quantization calibration
 --------------------------------
@@ -51,8 +51,10 @@ if str(_REPO_ROOT) not in sys.path:
 from evaluation_lib.config import DATASET_DEFAULT, MODEL_PATHS
 from evaluation_lib.prompt import build_full_prompt
 
-ONNX_DIR = _REPO_ROOT / "models" / "onnx"
-ONNX_STEMS = {"qwen3": "qwen3-0.6b", "llama3": "llama3.2-1b"}
+ONNX_DIRS = {
+    "qwen3": _REPO_ROOT / "models" / "qwen3-0.6b_LoRA_C_1k_merged" / "onnx",
+    "llama3": _REPO_ROOT / "models" / "llama3.2-1b_LoRA_C_1k_merged" / "onnx",
+}
 
 N_CALIBRATION_SAMPLES = 32
 
@@ -183,15 +185,15 @@ class PrefillCalibrationReader(CalibrationDataReader):
 
 
 def quantize_model(model_key: str) -> None:
-    stem = ONNX_STEMS[model_key]
-    model_in = ONNX_DIR / f"{stem}-fp32" / "model.onnx"
+    onnx_root = ONNX_DIRS[model_key]
+    model_in = onnx_root / "fp32" / "model.onnx"
     if not model_in.exists():
         raise FileNotFoundError(
             f"{model_in} not found -- export the FP32 ONNX model first "
             f"(see evaluation_onnx/readme.md)."
         )
 
-    dyn_dir = ONNX_DIR / f"{stem}-dynamic-int8"
+    dyn_dir = onnx_root / "dynamic-int8"
     dyn_dir.mkdir(parents=True, exist_ok=True)
     print(f"[{model_key}] Dynamic INT8 quantization -> {dyn_dir}")
     exclude_nodes = _non_weight_matmul_names(model_in)
@@ -208,7 +210,7 @@ def quantize_model(model_key: str) -> None:
         use_external_data_format=True,
     )
 
-    static_dir = ONNX_DIR / f"{stem}-static-int8"
+    static_dir = onnx_root / "static-int8"
     static_dir.mkdir(parents=True, exist_ok=True)
     print(
         f"[{model_key}] Static INT8 quantization "
@@ -234,7 +236,7 @@ def quantize_model(model_key: str) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--model", choices=list(ONNX_STEMS), required=True)
+    p.add_argument("--model", choices=list(ONNX_DIRS), required=True)
     args = p.parse_args()
     quantize_model(args.model)
 
