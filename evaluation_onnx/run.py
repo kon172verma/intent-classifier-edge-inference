@@ -67,6 +67,7 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.config import (
     DATASET_DEFAULT,
     MODEL_DISPLAY_NAMES,
@@ -81,6 +82,7 @@ from evaluation_lib.prompt import (
     build_system_prefix_text,
     build_tools_only_prompt,
 )
+from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
 from evaluation_onnx.cache import (
     Cache,
     clone_cache,
@@ -89,9 +91,8 @@ from evaluation_onnx.cache import (
     run_segment,
 )
 from evaluation_onnx.inference import run_inference
-from evaluation_lib.boundary import find_tools_query_boundary
-from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
 from evaluation_onnx.model_loader import (
+    load_cpu_bootstrap_session,
     load_session,
     load_text_tokenizer,
     onnx_model_size_mb,
@@ -220,6 +221,7 @@ def main() -> None:
         qnn_backend=args.qnn_backend,
         qnn_lib_path=args.qnn_lib_path,
     )
+    bootstrap_session = load_cpu_bootstrap_session(args.model, args.precision, device)
     weights_mb = onnx_model_size_mb(args.model, args.precision)
     print(f"[model] ONNX file size: {weights_mb:.1f} MB ({args.precision} on {device})\n")
 
@@ -246,8 +248,11 @@ def main() -> None:
     # ------------------------------------------------------------------
     prefix_cache: Cache | None
     prefix_cache, prefix_len, prefix_creation_ms = compute_prefix_cache(
-        session, system_tokens_template
+        session, system_tokens_template, bootstrap_session=bootstrap_session
     )
+    # The CPU session is only needed for CoreML's first non-empty KV cache.
+    # Keep benchmark memory and all request-time execution on the main session.
+    del bootstrap_session
     prefix_cache_size_bytes = kv_cache_bytes(prefix_cache)
 
     _sample_prompt = build_full_prompt(
@@ -381,6 +386,7 @@ def main() -> None:
                 "One-time cost to compute the system-prompt KV cache, "
                 "excluded from per-example measurements above."
             ),
+            "cpu_bootstrap_tokens": 1 if device == "coreml" and prefix_len else 0,
         },
     }
 

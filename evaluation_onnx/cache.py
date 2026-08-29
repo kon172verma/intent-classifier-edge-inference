@@ -125,7 +125,7 @@ def run_segment(
         "input_ids": input_ids,
         "attention_mask": np.ones((1, total_len), dtype=np.int64),
         "position_ids": np.arange(past_len, total_len, dtype=np.int64)[None, :],
-        **cache,
+        **cache,  # type: ignore
     }
     output_names = [o.name for o in session.get_outputs()]
 
@@ -142,7 +142,9 @@ def run_segment(
 
 
 def compute_prefix_cache(
-    session: ort.InferenceSession, system_tokens: np.ndarray
+    session: ort.InferenceSession,
+    system_tokens: np.ndarray,
+    bootstrap_session: ort.InferenceSession | None = None,
 ) -> tuple[Cache, int, float]:
     """Pre-compute the KV cache for the static system-prompt prefix.
 
@@ -154,10 +156,30 @@ def compute_prefix_cache(
         Number of tokens in the prefix.
     creation_ms
         Wall-clock time to compute the cache (ms). One-time cost.
+
+    Notes
+    -----
+    CoreML cannot accept the zero-length KV-cache tensors required by the
+    first call to a decoder-with-past graph. When *bootstrap_session* is
+    supplied, it runs the first real system-prefix token on CPU to create a
+    one-token cache; the remaining prefix then runs on *session* (CoreML).
+    All request-time work still uses CoreML.
     """
     if system_tokens.shape[1] == 0:
         return empty_cache(session), 0, 0.0
 
-    cache = empty_cache(session)
-    new_cache, _logits, creation_ms = run_segment(session, system_tokens, cache)
+    if bootstrap_session is None:
+        cache = empty_cache(session)
+        new_cache, _logits, creation_ms = run_segment(session, system_tokens, cache)
+        return new_cache, system_tokens.shape[1], creation_ms
+
+    bootstrap_tokens = system_tokens[:, :1]
+    cache, _logits, bootstrap_ms = run_segment(
+        bootstrap_session, bootstrap_tokens, empty_cache(bootstrap_session)
+    )
+    if system_tokens.shape[1] == 1:
+        return cache, 1, bootstrap_ms
+
+    new_cache, _logits, coreml_ms = run_segment(session, system_tokens[:, 1:], cache)
+    creation_ms = bootstrap_ms + coreml_ms
     return new_cache, system_tokens.shape[1], creation_ms

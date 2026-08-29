@@ -37,7 +37,16 @@ python3 -m venv scripts/.venv-onnx
 scripts/.venv-onnx/bin/pip install --upgrade pip
 scripts/.venv-onnx/bin/pip install "optimum[onnxruntime]" onnxruntime
 
-# 2. Export each HF checkpoint to ONNX (FP32 base + FP16 variant)
+# 2. Stage Llama 3.2 with a legacy-compatible RoPE config
+#
+# Optimum exports through Transformers 4.57.x, which reads the older
+# `rope_scaling` field. The release checkpoint was produced by Transformers 5
+# and uses `rope_parameters`; staging converts that configuration (and the
+# Transformers-5-only `TokenizersBackend` metadata) without modifying the
+# original checkpoint. Qwen3 does not need this step.
+python scripts/prepare_onnx_export_source.py --model llama3
+
+# 3. Export each HF checkpoint to ONNX (FP32 base + FP16 variant)
 mkdir -p models/qwen3-0.6b_LoRA_C_1k_merged/onnx
 mkdir -p models/llama3.2-1b_LoRA_C_1k_merged/onnx
 for dtype in fp32 fp16; do
@@ -46,12 +55,12 @@ for dtype in fp32 fp16; do
       --task text-generation-with-past --dtype ${dtype} \
     models/qwen3-0.6b_LoRA_C_1k_merged/onnx/${dtype}
   scripts/.venv-onnx/bin/optimum-cli export onnx \
-    -m models/llama3.2-1b_LoRA_C_1k_merged/safetensors \
+    -m models/_onnx_export_sources/llama3.2-1b_LoRA_C_1k_legacy_rope \
       --task text-generation-with-past --dtype ${dtype} \
     models/llama3.2-1b_LoRA_C_1k_merged/onnx/${dtype}
 done
 
-# 3. Quantize (dynamic-int8 + static-int8), using the MAIN venv
+# 4. Quantize (dynamic-int8 + static-int8), using the MAIN venv
 .venv/bin/python scripts/quantize_onnx.py --model qwen3
 .venv/bin/python scripts/quantize_onnx.py --model llama3
 ```
@@ -93,7 +102,9 @@ the CoreML execution provider with:
 ```text
 Input (past_key_values.0.key) has a dynamic shape ({-1,8,-1,128}) but the
 runtime shape ({1,8,0,128}) has zero elements. This is not supported by the
-CoreML EP.
+CoreML EP. FP16 uses a one-token CPU bootstrap to turn the empty cache into a
+non-empty KV cache before CoreML takes over; this is a one-time prefix-cache
+creation cost, not part of request-time inference.
 ```
 
 This is a known ONNX Runtime CoreML EP limitation -- it cannot handle the
@@ -159,20 +170,14 @@ python evaluation_onnx/plot_results.py
   backend can't run (ORT's built-in provider-fallback mechanism); the
   `run_config.onnxruntime_providers` field in each result JSON records the
   actual active provider list for the session.
-- **Llama-3.2 numerical divergence from `evaluation_baseline`:** `optimum-onnx`
-  (the ONNX export tool) pins `transformers<4.58.0`, while the main project
-  venv (used by `evaluation_baseline`/`evaluation_llama_cpp`) runs
-  transformers 5.14.1. Direct comparison (same token ids, both fp32,
-  bypassing ONNX entirely) confirmed the two transformers versions compute
-  genuinely different logits for Llama-3.2 specifically (max abs logit diff
-  ~10, changing the argmax token) -- almost certainly a difference in how
-  each version implements Llama 3.2's NTK-aware `rope_type="llama3"` scaling
-  (Qwen3 uses standard rope and is unaffected: it matches
-  `evaluation_baseline` exactly). The ONNX-exported model faithfully
-  reproduces transformers 4.57.6's behavior -- this is **not** a bug in the
-  export or in this package's inference code. Practical implication: for
-  Llama-3.2, compare `fp32`/`fp16`/`dynamic-int8`/`static-int8`
-  *relative to each other* within `evaluation_onnx` (all traced from the
-  same FP32 base, so quantization effects are still measured correctly);
-  don't expect Llama-3.2's absolute accuracy numbers here to match
-  `evaluation_baseline`'s HF results 1:1.
+- **Llama-3.2 RoPE compatibility:** the Optimum export environment currently
+  uses Transformers 4.57.x, while the release checkpoint uses the
+  Transformers 5 `rope_parameters` configuration format. Transformers 4.57
+  instead reads Llama's `rope_theta` and `rope_scaling` fields. Exporting the
+  checkpoint directly therefore falls back to a theta of 10,000 instead of
+  Llama 3.2's 500,000 and severely degrades routing accuracy even for FP32.
+  Always run `scripts/prepare_onnx_export_source.py --model llama3` before
+  exporting; it creates a symlinked staging directory whose copied
+  `config.json` maps the same Llama 3 RoPE values to the legacy fields and
+  makes the tokenizer metadata readable by the exporter. It does not alter
+  the release checkpoint.

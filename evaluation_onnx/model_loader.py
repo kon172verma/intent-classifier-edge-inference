@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import onnx
 import onnxruntime as ort
 
 from evaluation_lib.config import MODEL_DISPLAY_NAMES, MODEL_ONNX_DIRS
@@ -81,7 +82,7 @@ def onnx_model_path(model_key: str, precision: str) -> Path:
 
 
 def onnx_model_size_mb(model_key: str, precision: str) -> float:
-    """Return the on-disk size (MB) of the model, including any external-data file.
+    """Return the on-disk size (MB) of the model, including external weights.
 
     Mirrors ``model_weights_mb``/``gguf_model_size_mb`` in the other
     evaluation packages -- a static, precision-dependent weights size to
@@ -89,15 +90,21 @@ def onnx_model_size_mb(model_key: str, precision: str) -> float:
     """
     model_path = onnx_model_path(model_key, precision)
     total_bytes = model_path.stat().st_size
-    external_data = model_path.with_name(model_path.name + "_data")
-    if external_data.exists():
-        total_bytes += external_data.stat().st_size
-    else:
-        # onnxruntime.quantization writes the sibling file as
-        # "<name>.data" instead of "<name>_data" -- check both spellings.
-        external_data = model_path.with_suffix(model_path.suffix + ".data")
-        if external_data.exists():
-            total_bytes += external_data.stat().st_size
+    model = onnx.load(str(model_path), load_external_data=False)
+    external_files = {
+        entry.value
+        for initializer in model.graph.initializer
+        for entry in initializer.external_data
+        if entry.key == "location"
+    }
+    for relative_path in external_files:
+        external_path = model_path.parent / relative_path
+        if not external_path.is_file():
+            raise FileNotFoundError(
+                f"ONNX external-weight file is missing: {external_path} "
+                f"(referenced by {model_path})"
+            )
+        total_bytes += external_path.stat().st_size
     return round(total_bytes / (1024 * 1024), 2)
 
 
@@ -148,6 +155,29 @@ def load_session(
     session = ort.InferenceSession(str(model_path), sess_options=sess_options, providers=providers)
     print(f"[model] Ready. (active providers: {session.get_providers()})\n")
     return session
+
+
+def load_cpu_bootstrap_session(
+    model_key: str,
+    precision: str,
+    device: str,
+) -> ort.InferenceSession | None:
+    """Load a one-token CPU bootstrap session for CoreML decoder graphs.
+
+    CoreML cannot execute a graph when its explicit KV-cache inputs have zero
+    sequence length. The caller uses this matching CPU session for exactly one
+    system-prefix token, then hands its non-empty cache to the CoreML session.
+    Other execution providers do not need the workaround.
+    """
+    if device != "coreml":
+        return None
+    model_path = onnx_model_path(model_key, precision)
+    options = ort.SessionOptions()
+    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    print("[model] Loading one-token CPU bootstrap session for CoreML KV-cache setup")
+    return ort.InferenceSession(
+        str(model_path), sess_options=options, providers=["CPUExecutionProvider"]
+    )
 
 
 def load_text_tokenizer(model_path: Any) -> Any:
