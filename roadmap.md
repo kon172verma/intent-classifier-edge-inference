@@ -2,8 +2,10 @@
 
 ## Status
 
-Planning only. No pipeline or evaluator changes are authorized by this
-roadmap. `AGENTS.md` defines the standards that the implementation must follow.
+Phase 1 is implemented: version manifests, validation, profile resolution, and
+the no-side-effect `python -m benchmark_pipeline` dry-run command. Artifact
+acquisition, merging, building, evaluation, and plotting remain unimplemented.
+`AGENTS.md` defines the standards that subsequent implementation must follow.
 
 ## Objective
 
@@ -157,18 +159,10 @@ preserving the native format each model was trained to produce.
 
 ## Cache-mode decision
 
-Remove `no_cache` from the future benchmark surface. It is an artificial
-autoregressive path and is already unavailable in llama.cpp.
-
-Retain the useful comparison currently labelled `kv_cache`, but rename it to
-`cold` during implementation:
-
-- `cold`: standard decoder KV cache; static system/tool prefix is freshly
-  ingested for every request.
-- `prefix_cache`: the static prefix is precomputed once and reused.
-
-This preserves the deployment-relevant measurement of prefix reuse without
-confusing normal decode-time KV caching with the experiment name.
+The pipeline benchmarks `prefix_cache` only: the static prompt prefix is
+precomputed once and reused. Do not schedule `kv_cache` or `no_cache`
+in the matrix. The older modes remain available only in legacy direct-engine
+commands until the evaluator refactor removes them.
 
 ## Historical reports and charts
 
@@ -188,9 +182,9 @@ new pipeline has produced an auditable replacement.
 ## Implementation phases (not started)
 
 1. **Manifest and planning layer**
-   - Add the three version manifests and schema validation.
-   - Add exact model-name and `all` selection.
-   - Implement `--dry-run` profile resolution and dependency plan output.
+   - [x] Add the three version manifests and schema validation.
+   - [x] Add exact model-name and `all` selection.
+   - [x] Implement dry-run profile resolution and dependency plan output.
 
 2. **Artifact acquisition and merge**
    - Refactor the existing merge helper to accept explicit manifest model
@@ -208,7 +202,8 @@ new pipeline has produced an auditable replacement.
    - Make all engine runners accept resolved model/artifact paths and run
      metadata.
    - Add the format-aware prompt renderer, parser, and canonical mapping.
-   - Rename `kv_cache` to `cold` and remove `no_cache`.
+   - Remove `kv_cache` and `no_cache` from the pipeline/evaluator interface;
+     pipeline profiles use `prefix_cache` only.
 
 5. **Reporting and plotting**
    - Change direct defaults from `results/` to `reports/`.

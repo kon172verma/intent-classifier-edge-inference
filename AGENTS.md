@@ -82,12 +82,11 @@ mix historical reports from another run.
 
 ## Cache modes
 
-- The standard benchmark modes are `cold` and `prefix_cache`.
-- `cold` means normal decoder KV caching is used, but the static prompt prefix
-  is freshly ingested for each request. It is the no-prefix-reuse baseline.
-- `prefix_cache` reuses the precomputed static prompt prefix.
-- Do not add a `no_cache` benchmark mode. It is not representative of normal
-  autoregressive deployment.
+- The standard benchmark mode is `prefix_cache`: it reuses the precomputed
+  static prompt prefix.
+- Do not schedule `kv_cache` or `no_cache` in the benchmark matrix.
+  They are retained only in legacy direct-engine commands until those commands
+  are refactored.
 
 ## Change discipline
 

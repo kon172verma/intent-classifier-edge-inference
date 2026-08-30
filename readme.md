@@ -49,6 +49,26 @@ Artifact targets:
 - TensorRT-LLM path for Jetson Orin-or-newer and supported cloud GPUs
 - vLLM where a suitable GPU-backed environment is available
 
+## Manifest Dry Run
+
+The first pipeline phase is implemented as a no-side-effect resolver. It
+validates a version manifest and prints the exact selected models, required
+artifacts, supported engine variants, cache modes, and dataset inputs. It does
+not download, merge, build, evaluate, or plot yet.
+
+```bash
+python scripts/prepare_benchmark_splits.py --dataset-size 10k
+
+python -m benchmark_pipeline \
+  --manifest manifests/v2.1.json \
+  --target rpi --compute cpu \
+  --models all \
+  --stages all
+```
+
+Use exact manifest names for a subset, for example
+`--models Qwen3-0.6B SmolLM2-360M`. Add `--json` for machine-readable output.
+
 ## Core Question
 
 How much optimization is possible for tool-routing style inference on edge devices
@@ -100,17 +120,10 @@ which variants are required, diagnostic-only, or intentionally omitted.
 
 ## Benchmark Method
 
-### Baseline
-
-Measure baseline inference first for each device and runtime without prompt prefix
-caching.
-
 ### Caching Experiments
 
-Evaluate:
-
-- Standard KV cache behavior during decode
-- Prompt prefix caching for static context
+Benchmark prompt prefix caching for static context. The pipeline does not
+schedule `kv_cache` or `no_cache` comparisons.
 
 Workload pattern to emulate:
 

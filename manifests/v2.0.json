@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "version": "v2.0",
+  "experiments": {
+    "repository": "kon172verma/intent-classifier-experiments",
+    "revision": "225a5766f66d752de4090ea228611418c7847a7b"
+  },
+  "dataset": {
+    "size": "1k",
+    "split_root": "benchmark_data/1k",
+    "splits": {
+      "test_anchor": "test_anchor.json",
+      "calibration": "calibration.json",
+      "final_selection_test": "test.json"
+    }
+  },
+  "prompt": {
+    "template_id": "v2-positional-id",
+    "system_prompt": "You are a tool router.\n\nRules:\n- Return only the selected tool ID.\n- Return '-' if no listed tool applies.\n- Do not explain.",
+    "output_format": "positional_id",
+    "model_no_tool_token": "-",
+    "canonical_no_tool_value": "none",
+    "positional_ids": {"ordering": "a-z_then_A-Z"}
+  },
+  "models": [
+    {
+      "name": "Qwen3-0.6B",
+      "slug": "qwen3-0.6b",
+      "base_model_id": "Qwen/Qwen3-0.6B",
+      "adapter": {
+        "subfolder": "v2.0/qwen3-0.6b_DoRA+_D_1k_20260826-052401",
+        "technique": "DoRA+",
+        "configuration": "D"
+      }
+    },
+    {
+      "name": "Llama-3.2-1B",
+      "slug": "llama3.2-1b",
+      "base_model_id": "meta-llama/Llama-3.2-1B-Instruct",
+      "adapter": {
+        "subfolder": "v2.0/llama3.2-1b_DoRA+_C_1k_20260826-062643",
+        "technique": "DoRA+",
+        "configuration": "C"
+      }
+    }
+  ],
+  "profiles": [
+    {
+      "id": "mac-cpu",
+      "target": "mac",
+      "compute": "cpu",
+      "engines": [
+        {"name": "transformers", "runtime_device": "cpu", "artifact": {"type": "transformers", "variants": ["merged"]}, "evaluate_variants": ["float32"], "cache_modes": ["prefix_cache"]},
+        {"name": "llama_cpp", "runtime_device": "cpu", "artifact": {"type": "gguf", "variants": ["Q8_0", "Q6_K", "Q4_K_M"]}, "evaluate_variants": ["Q8_0", "Q6_K", "Q4_K_M"], "cache_modes": ["prefix_cache"]},
+        {"name": "onnx_runtime", "runtime_device": "cpu", "artifact": {"type": "onnx", "variants": ["fp32", "dynamic-int8", "static-int8"]}, "evaluate_variants": ["fp32", "dynamic-int8", "static-int8"], "cache_modes": ["prefix_cache"]}
+      ]
+    },
+    {
+      "id": "mac-gpu",
+      "target": "mac",
+      "compute": "gpu",
+      "engines": [
+        {"name": "transformers", "runtime_device": "mps", "artifact": {"type": "transformers", "variants": ["merged"]}, "evaluate_variants": ["float16", "bfloat16"], "cache_modes": ["prefix_cache"]},
+        {"name": "llama_cpp", "runtime_device": "metal", "artifact": {"type": "gguf", "variants": ["Q8_0", "Q6_K", "Q4_K_M"]}, "evaluate_variants": ["Q8_0", "Q6_K", "Q4_K_M"], "cache_modes": ["prefix_cache"]},
+        {"name": "onnx_runtime", "runtime_device": "coreml", "artifact": {"type": "onnx", "variants": ["fp16"]}, "evaluate_variants": ["fp16"], "cache_modes": ["prefix_cache"]}
+      ]
+    },
+    {
+      "id": "rpi-cpu",
+      "target": "rpi",
+      "compute": "cpu",
+      "engines": [
+        {"name": "transformers", "runtime_device": "cpu", "artifact": {"type": "transformers", "variants": ["merged"]}, "evaluate_variants": ["float32"], "cache_modes": ["prefix_cache"]},
+        {"name": "llama_cpp", "runtime_device": "cpu", "artifact": {"type": "gguf", "variants": ["Q4_K_M", "Q6_K", "Q8_0"]}, "evaluate_variants": ["Q4_K_M", "Q6_K", "Q8_0"], "cache_modes": ["prefix_cache"]},
+        {"name": "onnx_runtime", "runtime_device": "cpu", "artifact": {"type": "onnx", "variants": ["fp32", "dynamic-int8", "static-int8"]}, "evaluate_variants": ["fp32", "dynamic-int8", "static-int8"], "cache_modes": ["prefix_cache"]}
+      ]
+    },
+    {
+      "id": "jetson-cpu",
+      "target": "jetson",
+      "compute": "cpu",
+      "engines": [
+        {"name": "transformers", "runtime_device": "cpu", "artifact": {"type": "transformers", "variants": ["merged"]}, "evaluate_variants": ["float32"], "cache_modes": ["prefix_cache"]},
+        {"name": "llama_cpp", "runtime_device": "cpu", "artifact": {"type": "gguf", "variants": ["Q4_K_M", "Q6_K", "Q8_0"]}, "evaluate_variants": ["Q4_K_M", "Q6_K", "Q8_0"], "cache_modes": ["prefix_cache"]},
+        {"name": "onnx_runtime", "runtime_device": "cpu", "artifact": {"type": "onnx", "variants": ["fp32", "dynamic-int8", "static-int8"]}, "evaluate_variants": ["fp32", "dynamic-int8", "static-int8"], "cache_modes": ["prefix_cache"]}
+      ]
+    },
+    {
+      "id": "jetson-gpu",
+      "target": "jetson",
+      "compute": "gpu",
+      "engines": [
+        {"name": "transformers", "runtime_device": "cuda", "artifact": {"type": "transformers", "variants": ["merged"]}, "evaluate_variants": ["float16", "float32"], "cache_modes": ["prefix_cache"]},
+        {"name": "llama_cpp", "runtime_device": "cuda", "artifact": {"type": "gguf", "variants": ["Q4_K_M", "Q6_K", "Q8_0"]}, "evaluate_variants": ["Q4_K_M", "Q6_K", "Q8_0"], "cache_modes": ["prefix_cache"]},
+        {"name": "onnx_runtime", "runtime_device": "cuda", "artifact": {"type": "onnx", "variants": ["fp16", "static-int8"]}, "evaluate_variants": ["fp16", "static-int8"], "cache_modes": ["prefix_cache"]},
+        {"name": "tensorrt", "runtime_device": "cuda", "artifact": {"type": "tensorrt", "variants": ["fp16", "int8"]}, "evaluate_variants": ["fp16", "int8"], "cache_modes": ["prefix_cache"]}
+      ]
+    }
+  ]
+}
