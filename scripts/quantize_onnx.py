@@ -34,6 +34,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import onnx
@@ -57,6 +58,92 @@ ONNX_DIRS = {
 }
 
 N_CALIBRATION_SAMPLES = 32
+RESOLVED_CALIBRATION_SAMPLES = 100
+
+
+def _render_calibration_prompt(
+    tokenizer: Any,
+    example: dict[str, Any],
+    system_prompt: str,
+) -> str:
+    """Render a calibration prompt without relying on the legacy global prompt."""
+    tool_lines = "\n".join(
+        f"- {tool['name']}: {tool['description']}" for tool in example["available_tools"]
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": f"Available tools:\n{tool_lines}\n\nUser request: {example['user_request']}",
+        },
+    ]
+    kwargs = {"tokenize": False, "add_generation_prompt": True}
+    try:
+        return tokenizer.apply_chat_template(messages, enable_thinking=False, **kwargs)
+    except TypeError:
+        return tokenizer.apply_chat_template(messages, **kwargs)
+
+
+class ResolvedPrefillCalibrationReader(CalibrationDataReader):
+    """Calibration reader for explicit checkpoint, split, and prompt inputs."""
+
+    def __init__(
+        self,
+        *,
+        checkpoint_dir: Path,
+        model_path: Path,
+        calibration_data: Path,
+        system_prompt: str,
+        n_samples: int,
+    ) -> None:
+        from transformers import AutoTokenizer
+
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            str(checkpoint_dir), clean_up_tokenization_spaces=False, local_files_only=True
+        )
+        dataset = json.loads(calibration_data.read_text(encoding="utf-8"))
+        if not isinstance(dataset, list) or not dataset:
+            raise ValueError(f"Calibration data must be a non-empty JSON array: {calibration_data}")
+        self._prompts = [
+            _render_calibration_prompt(self._tokenizer, example, system_prompt)
+            for example in dataset[:n_samples]
+        ]
+        self._past_specs = _past_kv_input_names(model_path)
+        self._idx = 0
+        if self._tokenizer.pad_token_id is None:
+            self._tokenizer.pad_token = self._tokenizer.eos_token
+        all_ids = [self._tokenizer(text, return_tensors="np").input_ids for text in self._prompts]
+        self._calib_seq_len = max(ids.shape[1] for ids in all_ids)
+
+    def get_next(self) -> dict[str, np.ndarray] | None:  # type: ignore[override]
+        if self._idx >= len(self._prompts):
+            return None
+        text = self._prompts[self._idx]
+        self._idx += 1
+        ids = self._tokenizer(text, return_tensors="np").input_ids.astype(np.int64)
+        real_len = ids.shape[1]
+        pad_len = self._calib_seq_len - real_len
+        if pad_len > 0:
+            ids = np.concatenate(
+                [
+                    ids,
+                    np.full((1, pad_len), self._tokenizer.pad_token_id, dtype=np.int64),
+                ],
+                axis=1,
+            )
+        seq_len = ids.shape[1]
+        attention_mask = np.ones((1, seq_len), dtype=np.int64)
+        if pad_len > 0:
+            attention_mask[:, real_len:] = 0
+        feed: dict[str, np.ndarray] = {
+            "input_ids": ids,
+            "attention_mask": attention_mask,
+            "position_ids": np.arange(seq_len, dtype=np.int64)[None, :],
+        }
+        for name, shape in self._past_specs:
+            concrete = [1 if index == 0 else max(0, dim) for index, dim in enumerate(shape)]
+            feed[name] = np.zeros(concrete, dtype=np.float32)
+        return feed
 
 
 def _non_weight_matmul_names(model_path: Path) -> list[str]:
@@ -232,6 +319,66 @@ def quantize_model(model_key: str) -> None:
         use_external_data_format=True,
     )
     print(f"[{model_key}] Done.\n")
+
+
+def quantize_resolved_model(
+    *,
+    checkpoint_dir: Path,
+    fp32_model: Path,
+    output_root: Path,
+    variants: list[str],
+    calibration_data: Path | None = None,
+    system_prompt: str | None = None,
+    n_calibration_samples: int = RESOLVED_CALIBRATION_SAMPLES,
+) -> None:
+    """Quantize an explicit manifest-resolved ONNX model into an empty output root."""
+    supported = {"dynamic-int8", "static-int8"}
+    unknown = sorted(set(variants) - supported)
+    if unknown:
+        raise ValueError(f"Unsupported ONNX quantization variant(s): {', '.join(unknown)}")
+    if not fp32_model.is_file():
+        raise FileNotFoundError(f"FP32 ONNX model does not exist: {fp32_model}")
+    if output_root.exists():
+        raise FileExistsError(f"Refusing to overwrite ONNX output root: {output_root}")
+    output_root.mkdir(parents=True)
+    excluded_nodes = _non_weight_matmul_names(fp32_model)
+    if "dynamic-int8" in variants:
+        dynamic_output = output_root / "dynamic-int8" / "model.onnx"
+        dynamic_output.parent.mkdir()
+        quantize_dynamic(
+            model_input=str(fp32_model),
+            model_output=str(dynamic_output),
+            weight_type=QuantType.QInt8,
+            op_types_to_quantize=["MatMul"],
+            nodes_to_exclude=excluded_nodes,
+            per_channel=True,
+            use_external_data_format=True,
+        )
+    if "static-int8" in variants:
+        if calibration_data is None:
+            raise ValueError("static-int8 requires calibration_data")
+        if system_prompt is None:
+            raise ValueError("static-int8 requires system_prompt")
+        static_output = output_root / "static-int8" / "model.onnx"
+        static_output.parent.mkdir()
+        reader = ResolvedPrefillCalibrationReader(
+            checkpoint_dir=checkpoint_dir,
+            model_path=fp32_model,
+            calibration_data=cast(Path, calibration_data),
+            system_prompt=cast(str, system_prompt),
+            n_samples=n_calibration_samples,
+        )
+        quantize_static(
+            model_input=str(fp32_model),
+            model_output=str(static_output),
+            calibration_data_reader=reader,
+            weight_type=QuantType.QInt8,
+            activation_type=QuantType.QInt8,
+            op_types_to_quantize=["MatMul"],
+            nodes_to_exclude=excluded_nodes,
+            per_channel=True,
+            use_external_data_format=True,
+        )
 
 
 def main() -> None:

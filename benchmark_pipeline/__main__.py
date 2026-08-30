@@ -10,10 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from benchmark_pipeline.artifacts import ArtifactError, fetch_sources, merge_models
+from benchmark_pipeline.builders import build_artifacts
 from benchmark_pipeline.manifest import (
     ManifestError,
     load_manifest,
     resolve_plan,
+    resolve_profile,
+    select_engines,
     select_models,
 )
 
@@ -102,19 +105,27 @@ def _read_hf_token() -> str | None:
     )
 
 
-def execute_phase_two(
-    *, manifest: dict[str, Any], requested_models: list[str], stages: list[str]
+def execute_pipeline(
+    *,
+    manifest: dict[str, Any],
+    target: str,
+    compute: str,
+    requested_models: list[str],
+    requested_engines: list[str],
+    stages: list[str],
 ) -> dict[str, Any]:
-    """Execute the acquisition and merge stages introduced in Phase 2."""
-    unsupported = [stage for stage in stages if stage not in {"fetch", "merge"}]
+    """Execute the acquisition, merge, and artifact-build stages available so far."""
+    unsupported = [stage for stage in stages if stage not in {"fetch", "merge", "build-artifacts"}]
     if unsupported:
         names = ", ".join(unsupported)
         raise ArtifactError(
             f"Execution is not implemented yet for stage(s): {names}. "
-            "Phase 2 supports --stages fetch merge."
+            "Phases 2-3 support --stages fetch merge build-artifacts."
         )
 
     models = select_models(manifest, requested_models)
+    profile = resolve_profile(manifest, target, compute)
+    engines = select_engines(profile, requested_engines)
     token = _read_hf_token()
     execution: dict[str, Any] = {"stages": stages, "models": [model["name"] for model in models]}
     if "fetch" in stages:
@@ -126,6 +137,16 @@ def execute_phase_two(
         )
     if "merge" in stages:
         execution["merge"] = merge_models(repo_root=REPO_ROOT, manifest=manifest, models=models)
+    if "build-artifacts" in stages:
+        execution["build-artifacts"] = build_artifacts(
+            repo_root=REPO_ROOT,
+            manifest=manifest,
+            models=models,
+            engines=engines,
+            calibration_data=REPO_ROOT
+            / manifest["dataset"]["split_root"]
+            / manifest["dataset"]["splits"]["calibration"],
+        )
     return execution
 
 
@@ -154,9 +175,12 @@ def main() -> int:
         return 0
 
     try:
-        execution = execute_phase_two(
+        execution = execute_pipeline(
             manifest=manifest,
+            target=args.target,
+            compute=args.compute,
             requested_models=args.models,
+            requested_engines=args.engines,
             stages=plan["stages"],
         )
     except (ArtifactError, ManifestError) as exc:
@@ -167,7 +191,7 @@ def main() -> int:
         print(json.dumps({"plan": plan, "execution": execution}, indent=2))
     else:
         print_plan(plan)
-        print("\n=== Phase 2 Execution ===")
+        print("\n=== Pipeline Execution ===")
         for stage in execution["stages"]:
             print(f"Completed: {stage}")
     return 0

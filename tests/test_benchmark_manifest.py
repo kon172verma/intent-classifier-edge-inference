@@ -76,6 +76,11 @@ class BenchmarkManifestTests(unittest.TestCase):
                 repo_root=REPO_ROOT,
             )
 
+    def test_xavier_profile_excludes_tensorrt_llm(self) -> None:
+        manifest = load_manifest(MANIFESTS_DIR / "v2.1.json")
+        profile = next(profile for profile in manifest["profiles"] if profile["id"] == "jetson-gpu")
+        self.assertNotIn("tensorrt", [engine["name"] for engine in profile["engines"]])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -105,8 +105,7 @@
       "engines": [
         {"name": "transformers", "runtime_device": "cuda", "artifact": {"type": "transformers", "variants": ["merged"]}, "evaluate_variants": ["float16", "float32"], "cache_modes": ["prefix_cache"]},
         {"name": "llama_cpp", "runtime_device": "cuda", "artifact": {"type": "gguf", "variants": ["Q4_K_M", "Q6_K", "Q8_0"]}, "evaluate_variants": ["Q4_K_M", "Q6_K", "Q8_0"], "cache_modes": ["prefix_cache"]},
-        {"name": "onnx_runtime", "runtime_device": "cuda", "artifact": {"type": "onnx", "variants": ["fp16", "static-int8"]}, "evaluate_variants": ["fp16", "static-int8"], "cache_modes": ["prefix_cache"]},
-        {"name": "tensorrt", "runtime_device": "cuda", "artifact": {"type": "tensorrt", "variants": ["fp16", "int8"]}, "evaluate_variants": ["fp16", "int8"], "cache_modes": ["prefix_cache"]}
+        {"name": "onnx_runtime", "runtime_device": "cuda", "artifact": {"type": "onnx", "variants": ["fp16", "static-int8"]}, "evaluate_variants": ["fp16", "static-int8"], "cache_modes": ["prefix_cache"]}
       ]
     }
   ]

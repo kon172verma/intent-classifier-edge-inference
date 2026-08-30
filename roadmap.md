@@ -2,12 +2,12 @@
 
 ## Status
 
-Phases 1 and 2 are implemented. The command remains a no-side-effect dry run
-unless `--execute` is supplied. Phase 2 supports `--stages fetch merge`: it
-downloads manifest-pinned base and adapter snapshots, records checksums and
-provenance, and merges adapters locally into the agreed layout. Artifact
-builders, evaluation, and plotting remain unimplemented. `AGENTS.md` defines
-the standards that subsequent implementation must follow.
+Phases 1 through 3 are implemented. The command remains a no-side-effect dry
+run unless `--execute` is supplied. It now supports `fetch`, `merge`, and
+`build-artifacts`: the latter builds profile-selected GGUF and ONNX variants
+from locally merged checkpoints, with calibration constrained to the manifest
+split. Evaluation and plotting remain unimplemented. `AGENTS.md` defines the
+standards that subsequent implementation must follow.
 
 ## Objective
 
@@ -199,10 +199,14 @@ new pipeline has produced an auditable replacement.
      compatibility entry point; it now shares the pipeline merge implementation.
 
 3. **Artifact builders**
-   - Create a GGUF build entry point from the current documented commands.
-   - Generalize ONNX export/quantization around resolved model paths.
-   - Keep TensorRT-LLM outside Xavier profiles; treat bare TensorRT as a later,
-     separate Xavier integration.
+   - [x] Create `scripts/build_gguf.py`, which accepts explicit merged paths
+     and produces only the profile-requested GGUF variants.
+   - [x] Generalize ONNX export/quantization around resolved model paths and
+     the manifest calibration split.
+   - [x] Add provenance-checked `build-artifacts` orchestration for GGUF and
+     ONNX artifacts.
+   - [x] Keep TensorRT-LLM outside Xavier profiles; bare TensorRT remains a
+     separate future integration.
 
 4. **Evaluation compatibility**
    - Make all engine runners accept resolved model/artifact paths and run

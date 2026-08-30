@@ -84,8 +84,23 @@ python -m benchmark_pipeline \
 ```
 
 Set `HF_TOKEN` (or `HUGGINGFACE_TOKEN`) before selecting gated models such as
-Llama. `--execute` currently supports `fetch` and `merge` only; artifact
-building, evaluation, and plotting remain later phases.
+Llama. Phase 3 adds `build-artifacts` for GGUF and ONNX variants:
+
+```bash
+BENCHMARK_GGUF_PYTHON=scripts/.venv-convert/bin/python \
+BENCHMARK_ONNX_OPTIMUM_CLI=scripts/.venv-onnx/bin/optimum-cli \
+python -m benchmark_pipeline \
+  --manifest manifests/v2.1.json \
+  --target rpi --compute cpu \
+  --models Qwen3-0.6B \
+  --stages build-artifacts \
+  --execute
+```
+
+The command requires a prior Phase 2 merged checkpoint. Static INT8 uses only
+the manifest's `calibration.json`; it does not use `test_anchor` or full test
+data. Evaluation and plotting remain later phases. TensorRT-LLM is excluded
+from the Jetson Xavier profile; bare TensorRT is a separate future integration.
 
 ## Core Question
 

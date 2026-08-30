@@ -44,6 +44,10 @@ models/<version>/<model-name>/
 must record the input source revision and builder version. Do not use the old
 flat `models/<run>_merged/` layout for new pipeline output.
 
+TensorRT-LLM is not a Xavier pipeline artifact. Keep it out of the Jetson
+Xavier profiles until bare TensorRT has a separately designed builder and
+evaluator integration.
+
 ## Report and chart layout
 
 Direct, engine-specific commands write to their engine folder:
