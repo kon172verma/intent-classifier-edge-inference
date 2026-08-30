@@ -38,6 +38,7 @@ temp/
 
 # Models
 models/
+benchmark_data/
 
 # Runtime engine outputs
 *.gguf

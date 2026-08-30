@@ -46,7 +46,7 @@ Artifact targets:
 - Hugging Face Transformers (reference path)
 - GGUF for llama.cpp
 - ONNX for ONNX Runtime
-- TensorRT-LLM path for Jetson where supported
+- TensorRT-LLM path for Jetson Orin-or-newer and supported cloud GPUs
 - vLLM where a suitable GPU-backed environment is available
 
 ## Core Question
@@ -80,13 +80,23 @@ Planned runtime focus by platform:
 
 | Device | Preferred runtimes |
 | --- | --- |
-| Apple Silicon | Transformers, llama.cpp, ONNX Runtime |
-| Raspberry Pi 5 | llama.cpp, ONNX Runtime |
+| Apple Silicon | Transformers (MPS), llama.cpp (Metal), ONNX Runtime (CPU/CoreML EP) |
+| Raspberry Pi 5 | llama.cpp (ARM CPU), ONNX Runtime (CPU) |
 | Qualcomm | ONNX Runtime (CPU first, QNN when available) |
-| Jetson Xavier | llama.cpp (CPU and GPU offload), TensorRT-LLM, ONNX Runtime |
+| Jetson Xavier | llama.cpp (CPU and CUDA offload), ONNX Runtime (CPU/CUDA/TensorRT EP), bare TensorRT |
+
+TensorRT-LLM is a separate Jetson **Orin-or-newer** / data-centre path, not a
+primary Xavier target: current upstream TensorRT-LLM support begins with
+Ampere-class GPUs, while Xavier is Volta (SM72).  A bare TensorRT engine may
+still be evaluated on Xavier, but it needs a distinct harness from the
+TensorRT-LLM package in this repository.
 
 Note: exact support depends on OS, SDK, driver, and runtime versions on each
 physical device.
+
+The device-by-runtime benchmark set and the kernel-based rationale are kept in
+[devices_info.md](devices_info.md).  This table is the source of truth for
+which variants are required, diagnostic-only, or intentionally omitted.
 
 ## Benchmark Method
 
@@ -189,7 +199,10 @@ Practical guidance for this repository:
 ### Phase 5: Jetson Optimization
 
 - Benchmark llama.cpp CPU and GPU offload modes.
-- Evaluate TensorRT-LLM if toolchain compatibility is confirmed.
+- On Xavier, evaluate ONNX Runtime CUDA/TensorRT EP and bare TensorRT before
+  considering a TensorRT-LLM port.
+- Treat TensorRT-LLM as an Orin-or-newer / cloud path, subject to its support
+  matrix and model-converter compatibility.
 - Compare Jetson-specific acceleration against generic runtimes.
 
 ### Phase 6: Cross-Device Comparison
@@ -224,17 +237,30 @@ File equivalence used for testing continuity:
 
 Split that was use for fine-tuning and evaluation:
 
-| Split | Files | Examples |
-| --- | --- | --- |
-| train | sample_0002.json to sample_0009.json | 800 |
-| val | sample_0010.json | 100 |
-| test | sample_0001.json | 100 |
-| test_anchor | sample_0001.json | 100 |
+| Split | Files | Examples | Edge pipeline use |
+| --- | --- | --- | --- |
+| train | sample_0002.json to sample_0009.json | 800 | No |
+| val | sample_0010.json | 100 | No |
+| test | sample_0001.json | 100 | No |
+| test_anchor | sample_0001.json | 100 | **Yes** |
+| calibration | sample_0002.json (train-only) | 100 | Static quantization only |
 
 Notes:
 
 - test_anchor intentionally matches test in the current 1k setup.
-- Keep this split stable when comparing runtimes and devices.
+- Edge matrix benchmarking always uses the 100-example test_anchor split.
+  After selecting a final device/engine/variant configuration (for example,
+  Raspberry Pi + llama.cpp + Q4_K_M), run its full version-specific test split
+  once as final-selection validation; do not repeat that full test across the
+  matrix.
+- Static quantization calibration uses the small, deterministic train-only
+  calibration split and must never use test_anchor or test examples.
+- Generate inference-compatible JSON split files with:
+
+  ```bash
+  python scripts/prepare_benchmark_splits.py --dataset-size 1k
+  python scripts/prepare_benchmark_splits.py --dataset-size 10k
+  ```
 
 ## Reporting Format
 
