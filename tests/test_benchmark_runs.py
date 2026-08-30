@@ -15,7 +15,7 @@ def _manifest() -> dict:
 
 def _plan() -> dict:
     return {
-        "profile": {"id": "mac-cpu"},
+        "profile": {"id": "mac-cpu", "target": "mac", "compute": "cpu"},
         "models": [
             {
                 "name": "Qwen3-0.6B",
@@ -32,6 +32,7 @@ def test_workspace_locks_all_planned_report_paths_before_execution(tmp_path: Pat
     workspace = create_run_workspace(repo_root=tmp_path, manifest=_manifest(), plan=_plan())
 
     assert workspace["root"].parent == tmp_path / "run_results"
+    assert workspace["run_id"].startswith("v2.1_mac_cpu_")
     assert (workspace["root"] / "manifest.lock.json").is_file()
     assert len(workspace["lock"]["report_index"]) == 3
     for slot in workspace["lock"]["report_index"]:

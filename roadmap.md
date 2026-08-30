@@ -71,19 +71,20 @@ Direct commands retain this local, engine-owned output behavior.
 ### Pipeline output
 
 ```text
-run_results/<version>_<timestamp>/
+run_results/<version>_<target>_<compute>_<timestamp>/
   manifest.lock.json
   run_summary.json
   <model-name>_<variant>/
     reports/
       <engine>/
-    analysis/
-      <engine>/
+  analysis/
+    <model-name>/<target>_<compute>.png
 ```
 
 Pipeline reports and charts must never be written into the direct-command
-`evaluation_<engine>/reports` or `analysis` folders. Each plot reads only the
-reports indexed by the pipeline run's `manifest.lock.json`.
+`evaluation_<engine>/reports` or `analysis` folders. Each pipeline chart
+compares all selected engine/variant reports for one model and one locked
+device profile, using only reports indexed by the run's `manifest.lock.json`.
 
 ## Version manifests
 

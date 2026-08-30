@@ -13,8 +13,9 @@ class PlotError(RuntimeError):
 
 
 def plot_workspace(workspace: dict[str, Any]) -> list[str]:
-    """Create one chart per model/engine from reports in this run's lock only."""
-    reports: list[tuple[dict[str, str], dict]] = []
+    """Create one all-engine comparison chart for every model in this locked run."""
+    reports_by_model: dict[str, dict[str, dict]] = {}
+    labels_by_model: dict[str, dict[str, str]] = {}
     for slot in workspace["lock"]["report_index"]:
         report_path = workspace["root"] / slot["report"]
         if not report_path.is_file():
@@ -25,21 +26,26 @@ def plot_workspace(workspace: dict[str, Any]) -> list[str]:
             raise PlotError(f"Indexed report is invalid JSON: {report_path}") from exc
         if document.get("run_config", {}).get("run_id") != workspace["run_id"]:
             raise PlotError(f"Report belongs to a different run: {report_path}")
-        reports.append((slot, document))
+        key = f"{slot['engine']}:{slot['variant']}"
+        reports_by_model.setdefault(slot["model"], {})[key] = document
+        labels_by_model.setdefault(slot["model"], {})[key] = f"{slot['engine']}\n{slot['variant']}"
 
+    profile = workspace["lock"]["selection"]["profile"]
+    target = profile["target"]
+    compute = profile["compute"]
     output: list[str] = []
-    for slot, document in reports:
-        out_path = workspace["root"] / slot["analysis_dir"] / "summary.png"
-        variant = slot["variant"]
+    for model, variant_docs in reports_by_model.items():
+        variant_order = list(variant_docs)
+        out_path = workspace["root"] / "analysis" / model / f"{target}_{compute}.png"
         plot_device_model(
-            slot["model"],
-            slot["engine"],
-            slot["model"],
-            {variant: document},
-            [variant],
-            {variant: variant},
+            target,
+            compute,
+            model,
+            variant_docs,
+            variant_order,
+            labels_by_model[model],
             out_path,
-            suptitle=(f"{slot['model']} — {slot['engine']} — {variant} ({workspace['run_id']})"),
+            suptitle=f"{model} — {target} {compute} ({workspace['run_id']})",
         )
         output.append(str(out_path.relative_to(workspace["root"])))
     return output

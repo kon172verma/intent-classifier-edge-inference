@@ -30,7 +30,8 @@ def create_run_workspace(
 ) -> dict[str, Any]:
     """Create a run directory and immutable planned-report index before execution."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    base_id = f"{manifest['version']}_{stamp}"
+    profile = plan["profile"]
+    base_id = f"{manifest['version']}_{profile['target']}_{profile['compute']}_{stamp}"
     parent = repo_root / "run_results"
     run_root = parent / base_id
     suffix = 1

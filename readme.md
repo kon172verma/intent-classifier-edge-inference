@@ -99,7 +99,8 @@ python -m benchmark_pipeline \
 
 The command requires a prior Phase 2 merged checkpoint. Static INT8 uses only
 the manifest's `calibration.json`; it does not use `test_anchor` or full test
-data. `evaluate` creates an isolated `run_results/<version>_<timestamp>/`
+data. `evaluate` creates an isolated
+`run_results/<version>_<target>_<compute>_<timestamp>/`
 workspace and locks the report index before launching any evaluator; `plot`
 uses only those indexed reports. A partial run can be resumed with `--run-dir`.
 
