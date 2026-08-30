@@ -19,21 +19,18 @@ All values are the *mean* aggregates from each run's JSON report. A shared
 legend for each column is rendered once in a dedicated row at the top of the
 figure so it never overlaps the chart area.
 
-Only reports produced with ``--mode kv_cache`` or ``--mode prefix_cache`` have
-the system-prompt/tools-list/user-query prefill split needed for columns 1-2
-(see evaluation_baseline/run.py); "no_cache" reports are not usable here.
+The plotter consumes standard prefix-cache reports, which include the
+system-prompt/tools-list/user-query prefill split needed for columns 1-2.
 
 Usage
 ------
     python evaluation_baseline/plot_results.py
-    python evaluation_baseline/plot_results.py --mode kv_cache
     python evaluation_baseline/plot_results.py --results-dir path/to/results
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -68,30 +65,22 @@ def parse_args() -> argparse.Namespace:
         default=_CHARTS_DIR,
         help="Directory to write PNG charts",
     )
-    p.add_argument(
-        "--mode",
-        choices=["kv_cache", "prefix_cache"],
-        default="prefix_cache",
-        help=(
-            "Which mode's reports to chart (only kv_cache/prefix_cache carry "
-            "the system-prompt/tools-list/user-query prefill split)"
-        ),
-    )
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    reports = load_reports(args.results_dir, mode=args.mode)
+    mode = "prefix_cache"
+    reports = load_reports(args.results_dir, mode=mode)
     if not reports:
-        print(f"[plot] ERROR: no reports found for mode={args.mode} in {args.results_dir}.")
+        print(f"[plot] ERROR: no reports found for mode={mode} in {args.results_dir}.")
         return
     grouped = group_reports(reports, "dtype")
     for (machine, device), by_model in grouped.items():
         for model_key in MODEL_DISPLAY_NAMES:
             variant_docs = by_model.get(model_key, {})
             model_name = MODEL_DISPLAY_NAMES.get(model_key, model_key)
-            out_path = args.output_dir / f"{model_key}_{machine}_{device}_{args.mode}.png"
+            out_path = args.output_dir / f"{model_key}_{machine}_{device}_{mode}.png"
             plot_device_model(
                 machine,
                 device,
@@ -100,7 +89,7 @@ def main() -> None:
                 DTYPE_ORDER,
                 DTYPE_LABELS,
                 out_path,
-                suptitle=f"{model_name} -- machine={machine}, device={device}, mode={args.mode}",
+                suptitle=f"{model_name} -- machine={machine}, device={device}, mode={mode}",
             )
 
 

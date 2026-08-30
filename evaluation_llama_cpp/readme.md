@@ -87,22 +87,16 @@ CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
 | `Q6_K` | 6.6 | k-quant, single mixture (no S/M/L variant exists) |
 | `Q4_K_M` | 5.2 | k-quant, "Medium" mixture (bumps some layers to Q6_K for quality) |
 
-## Caching Modes
+## Caching
 
-| Mode | Description |
-| ------ | ------------- |
-| `kv_cache` | Standard llama.cpp KV cache; system prompt + tools list re-ingested (and re-timed) fresh every example |
-| `prefix_cache` | Static system-prompt prefix pre-computed once via `save_state()`, restored via `load_state()` per example |
-
-llama.cpp has no equivalent of HF's `use_cache=False` "no_cache" mode — ggml's
-causal attention always maintains a KV cache internally, so that mode isn't
-offered here.
+All direct and pipeline runs use `prefix_cache`: llama.cpp pre-computes the
+static system-prompt state with `save_state()` and restores it per example.
 
 ## Usage
 
 ```bash
-python evaluation_llama_cpp/run.py --model qwen3 --quant Q4_K_M --mode prefix_cache --device mps
-python evaluation_llama_cpp/run.py --model llama3 --quant Q8_0 --mode kv_cache --device cpu
+python evaluation_llama_cpp/run.py --model qwen3 --quant Q4_K_M --device mps
+python evaluation_llama_cpp/run.py --model llama3 --quant Q8_0 --device cpu
 
 python evaluation_llama_cpp/plot_results.py --mode prefix_cache
 ```

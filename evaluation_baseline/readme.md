@@ -17,13 +17,10 @@ evaluation_baseline/
 
 Shared utilities live in `evaluation_lib/` (sibling package).
 
-## Caching Modes
+## Caching
 
-| Mode | Description |
-| ------ | ------------- |
-| `no_cache` | KV cache disabled; every decode step reprocesses all tokens |
-| `kv_cache` | Standard decode-time KV cache (default Transformers behaviour) |
-| `prefix_cache` | Static system-prompt prefix pre-computed once and cloned per example |
+All direct and pipeline runs use `prefix_cache`: the static system-prompt
+prefix is pre-computed once and cloned per example.
 
 ## Usage
 
@@ -31,9 +28,7 @@ Shared utilities live in `evaluation_lib/` (sibling package).
 # Activate the project venv first
 source .venv/bin/activate
 
-python evaluation_baseline/run.py --model qwen3  --mode no_cache
-python evaluation_baseline/run.py --model llama3 --mode kv_cache
-python evaluation_baseline/run.py --model qwen3  --mode prefix_cache --device mps
+python evaluation_baseline/run.py --model qwen3 --device mps
 ```
 
 ### CLI Options
@@ -41,7 +36,6 @@ python evaluation_baseline/run.py --model qwen3  --mode prefix_cache --device mp
 | Flag | Default | Description |
 | ------ | --------- | ------------- |
 | `--model` | required | `qwen3` or `llama3` |
-| `--mode` | `no_cache` | `no_cache`, `kv_cache`, or `prefix_cache` |
 | `--device` | `auto` | `auto`, `mps`, `cpu`, or `cuda` |
 | `--dataset` | `dataset_full/sample_0001.json` | Path to dataset JSON |
 | `--output-dir` | `evaluation_baseline/results/` | Directory for JSON output |
@@ -49,7 +43,7 @@ python evaluation_baseline/run.py --model qwen3  --mode prefix_cache --device mp
 
 ## Output
 
-Results are written to `results/<model>_<device>_<mode>_<timestamp>.json` with
+Results are written to `results/<model>_<device>_prefix_cache_<timestamp>.json` with
 three top-level sections:
 
 - `run_config` — model, mode, device, dtype, dataset path, library versions,

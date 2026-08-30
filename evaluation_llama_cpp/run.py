@@ -3,27 +3,8 @@
 llama.cpp (GGUF, quantized) baseline benchmark: mirrors evaluation_baseline/
 but runs the model via llama-cpp-python instead of HF Transformers/PyTorch.
 
-Modes
-------
-kv_cache     — Standard llama.cpp KV cache; system prompt + tools list are
-               re-ingested (and re-timed) fresh for every example.
-prefix_cache — Static system-prompt prefix pre-computed once via
-               ``save_state()``; each example restores that snapshot via
-               ``load_state()`` before ingesting its own tools list.
-
-Note: llama.cpp has no equivalent of HF's ``use_cache=False`` "no_cache"
-mode -- ggml's causal attention always maintains a KV cache internally, so
-that mode is not offered here.
-
-Usage
-------
-    # Activate the project venv first: source .venv/bin/activate
-    python evaluation_llama_cpp/run.py --model qwen3 --quant Q4_K_M --mode kv_cache
-    python evaluation_llama_cpp/run.py --model llama3 --quant Q8_0 --mode prefix_cache --device mps
-
-Output
-------
-    evaluation_llama_cpp/results/<model>_<machine>_<device>_<mode>_<quant>_<timestamp>.json
+All direct and pipeline runs use prefix_cache. llama.cpp pre-computes the
+static system-prompt state once and restores it per example.
 """
 
 from __future__ import annotations
@@ -44,22 +25,26 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from evaluation_lib.boundary import find_tools_query_boundary
+from evaluation_lib.compatibility import canonical_expected, legacy_prompt_spec, parse_prediction
 from evaluation_lib.config import (
     DATASET_DEFAULT,
     MODEL_DISPLAY_NAMES,
     MODEL_PATHS,
     N_CTX_DEFAULT,
     QUANT_LEVELS,
+    SYSTEM_PROMPT,
     WARMUP_EXAMPLES,
 )
 from evaluation_lib.device import resolve_device
 from evaluation_lib.metrics import aggregate_metrics, compute_quality
-from evaluation_lib.output_parser import extract_predicted_tool
 from evaluation_lib.prompt import (
     build_full_prompt,
     build_system_prefix_text,
     build_tools_only_prompt,
 )
+from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
+from evaluation_lib.run_context import load_prompt_spec
 from evaluation_llama_cpp.cache import (
     clone_prefix_cache,
     compute_prefix_cache,
@@ -67,9 +52,8 @@ from evaluation_llama_cpp.cache import (
     kv_cache_bytes,
 )
 from evaluation_llama_cpp.inference import run_inference
-from evaluation_lib.boundary import find_tools_query_boundary
-from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
 from evaluation_llama_cpp.model_loader import (
+    gguf_model_path,
     gguf_model_size_mb,
     load_model,
     load_text_tokenizer,
@@ -90,21 +74,32 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--model",
-        choices=list(MODEL_PATHS),
         required=True,
-        help="Model to benchmark",
+        help="Model label (legacy key, or exact manifest model name with explicit paths).",
     )
     p.add_argument(
-        "--mode",
-        choices=["kv_cache", "prefix_cache"],
-        default="prefix_cache",
-        help="Caching mode",
+        "--gguf-path",
+        type=Path,
+        default=None,
+        help="Explicit GGUF file path for pipeline execution.",
+    )
+    p.add_argument(
+        "--tokenizer-path",
+        type=Path,
+        default=None,
+        help="Explicit merged Transformers checkpoint used to render prompts.",
     )
     p.add_argument(
         "--quant",
         choices=QUANT_LEVELS,
         required=True,
         help="GGUF quantization level",
+    )
+    p.add_argument(
+        "--manifest", type=Path, default=None, help="Version manifest supplying prompt rules."
+    )
+    p.add_argument(
+        "--run-id", default=None, help="Optional pipeline run identifier recorded in output."
     )
     p.add_argument(
         "--device",
@@ -155,10 +150,19 @@ def main() -> None:
     device = resolve_device(args.device)
     if device == "cuda":
         device = "cpu"  # this project only targets mps/cpu for llama.cpp
-    mode = args.mode
+    mode = "prefix_cache"
+    prompt_spec, manifest_provenance = load_prompt_spec(args.manifest)
+    prompt_spec = prompt_spec or legacy_prompt_spec(SYSTEM_PROMPT)
+    if args.gguf_path is None and args.model not in MODEL_PATHS:
+        raise ValueError("--gguf-path is required when --model is not a legacy model key")
+    if args.tokenizer_path is None and args.model not in MODEL_PATHS:
+        raise ValueError("--tokenizer-path is required when --model is not a legacy model key")
+    gguf_path = args.gguf_path or gguf_model_path(args.model, args.quant)
+    tokenizer_path = args.tokenizer_path or MODEL_PATHS[args.model]
+    model_name = MODEL_DISPLAY_NAMES.get(args.model, args.model)
 
     print("=== llama.cpp Benchmark ===")
-    print(f"  model   : {args.model} ({MODEL_DISPLAY_NAMES[args.model]})")
+    print(f"  model   : {args.model} ({model_name})")
     print(f"  machine : {args.machine}")
     print(f"  mode    : {mode}")
     print(f"  quant   : {args.quant}")
@@ -170,14 +174,14 @@ def main() -> None:
         dataset: list[dict] = json.load(f)
     print(f"[data] Loaded {len(dataset)} examples from {args.dataset.name}\n")
 
-    llm = load_model(args.model, args.quant, device, n_ctx=args.n_ctx)
-    weights_mb = gguf_model_size_mb(args.model, args.quant)
+    llm = load_model(args.model, args.quant, device, n_ctx=args.n_ctx, model_path=gguf_path)
+    weights_mb = gguf_model_size_mb(args.model, args.quant, model_path=gguf_path)
     print(f"[model] GGUF file size: {weights_mb:.1f} MB ({args.quant} on {device})\n")
 
     # Tokenizer used ONLY for chat-template text rendering (see
     # evaluation_llama_cpp/model_loader.py); actual token ids come from
     # llm.tokenize() so they match the GGUF model's own vocab exactly.
-    text_tokenizer = load_text_tokenizer(MODEL_PATHS[args.model])
+    text_tokenizer = load_text_tokenizer(tokenizer_path)
 
     def tok(text: str) -> list[int]:
         # add_bos=False: the chat template already embeds the literal BOS
@@ -189,42 +193,40 @@ def main() -> None:
         # has no BOS token at all, but wrong for Llama 3.2).
         return llm.tokenize(text.encode("utf-8"), add_bos=False, special=True)
 
-    system_prefix_text = build_system_prefix_text(text_tokenizer)
+    system_prefix_text = build_system_prefix_text(text_tokenizer, prompt_spec)
     system_tokens_template = tok(system_prefix_text) if system_prefix_text else []
     system_len = len(system_tokens_template)
 
     # ------------------------------------------------------------------
-    # Prefix-cache setup (prefix_cache mode only)
+    # Prefix-cache setup
     # ------------------------------------------------------------------
     prefix_state = None
     prefix_len = 0
     prefix_creation_ms = 0.0
     prefix_cache_size_bytes = 0
 
-    if mode == "prefix_cache":
-        prefix_state, prefix_len, prefix_creation_ms = compute_prefix_cache(
-            llm, system_tokens_template
-        )
-        prefix_cache_size_bytes = kv_cache_bytes(llm)
+    prefix_state, prefix_len, prefix_creation_ms = compute_prefix_cache(llm, system_tokens_template)
+    prefix_cache_size_bytes = kv_cache_bytes(llm)
 
-        # Verify prefix token alignment against the first dataset example.
-        sample_prompt = build_full_prompt(
-            text_tokenizer,
-            dataset[0]["user_request"],
-            dataset[0]["available_tools"],
+    # Verify prefix token alignment against the first dataset example.
+    sample_prompt = build_full_prompt(
+        text_tokenizer,
+        dataset[0]["user_request"],
+        dataset[0]["available_tools"],
+        prompt_spec,
+    )
+    sample_tokens = tok(sample_prompt)
+    if sample_tokens[:system_len] != system_tokens_template:
+        print(
+            "[prefix_cache] WARNING: prefix tokens do not align with full "
+            "prompt tokens. Falling back to fresh system-prefix ingestion "
+            "per example (no prefix savings)."
         )
-        sample_tokens = tok(sample_prompt)
-        if sample_tokens[:system_len] != system_tokens_template:
-            print(
-                "[prefix_cache] WARNING: prefix tokens do not align with full "
-                "prompt tokens. Falling back to fresh system-prefix ingestion "
-                "per example (no prefix savings)."
-            )
-            prefix_state = None
-            prefix_len = 0
-        else:
-            prefix_len = system_len
-            print(f"[prefix_cache] Prefix alignment verified. prefix_len={prefix_len} tokens.\n")
+        prefix_state = None
+        prefix_len = 0
+    else:
+        prefix_len = system_len
+        print(f"[prefix_cache] Prefix alignment verified. prefix_len={prefix_len} tokens.\n")
 
     # ------------------------------------------------------------------
     # Inference loop
@@ -234,13 +236,12 @@ def main() -> None:
     for idx, example in enumerate(dataset):
         user_request = example["user_request"]
         available_tools = example["available_tools"]
-        expected = example["answer"]
-        tool_names = {t["name"] for t in available_tools}
+        expected = canonical_expected(example["answer"], prompt_spec)
 
-        full_prompt = build_full_prompt(text_tokenizer, user_request, available_tools)
+        full_prompt = build_full_prompt(text_tokenizer, user_request, available_tools, prompt_spec)
         full_tokens = tok(full_prompt)
 
-        tools_only_prompt = build_tools_only_prompt(text_tokenizer, available_tools)
+        tools_only_prompt = build_tools_only_prompt(text_tokenizer, available_tools, prompt_spec)
         tools_only_tokens = tok(tools_only_prompt)
         boundary = find_tools_query_boundary(full_tokens, tools_only_tokens)
 
@@ -251,7 +252,7 @@ def main() -> None:
             else f"[{idx - args.warmup + 1:3d}/{len(dataset) - args.warmup}]"
         )
 
-        if mode == "prefix_cache" and prefix_state is not None:
+        if prefix_state is not None:
             # Restore the model to the saved system-prefix state. Cost is
             # deliberately NOT timed (mirrors clone_cache() in
             # evaluation_baseline, also not timed).
@@ -259,8 +260,7 @@ def main() -> None:
             system_prefill_ms = 0.0
             system_prefill_tokens = prefix_len
         else:
-            # kv_cache mode: no persistent cache across examples, so the
-            # system prompt is re-ingested (and re-timed) every call.
+            # Prefix alignment failed, so re-ingest the static prefix.
             llm.reset()
             system_tokens = full_tokens[:system_len]
             system_prefill_ms = ingest_prefix_segment(llm, system_tokens)
@@ -280,7 +280,8 @@ def main() -> None:
             report_prefill_split=True,
         )
 
-        predicted = extract_predicted_tool(timing["generated_text"], tool_names)
+        parsed = parse_prediction(timing["generated_text"], available_tools, prompt_spec)
+        predicted = parsed.canonical_tool_name
         correct = predicted == expected
 
         if not is_warmup:
@@ -296,6 +297,9 @@ def main() -> None:
                     "user_request": user_request,
                     "expected": expected,
                     "predicted": predicted,
+                    "raw_model_output": parsed.raw_output,
+                    "parsed_model_output": parsed.parsed_output,
+                    "invalid_output_reason": parsed.invalid_reason,
                     "correct": correct,
                     **timing,
                 }
@@ -319,7 +323,9 @@ def main() -> None:
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     run_config: dict[str, Any] = {
         "model_key": args.model,
-        "model_name": MODEL_DISPLAY_NAMES[args.model],
+        "model_name": model_name,
+        "model_path": str(gguf_path),
+        "tokenizer_path": str(tokenizer_path),
         "machine": args.machine,
         "mode": mode,
         "device": device,
@@ -334,17 +340,22 @@ def main() -> None:
         "python_version": sys.version,
         "llama_cpp_python_version": llama_cpp.__version__,
         "model_weights_mb": weights_mb,
+        "run_id": args.run_id,
+        "prompt": {
+            "template_id": prompt_spec.template_id,
+            "output_format": prompt_spec.output_format,
+            **manifest_provenance,
+        },
         "prefill_split_info": build_prefill_split_info(),
     }
 
-    if mode == "prefix_cache":
-        run_config["prefix_cache_info"] = {
-            "prefix_tokens": prefix_len,
-            "cache_creation_ms": round(prefix_creation_ms, 3),
-            "cache_size_bytes": prefix_cache_size_bytes,
-            "cache_size_kb": round(prefix_cache_size_bytes / 1024, 2),
-            "note": ("cache_creation_ms is a one-time cost amortised over all examples."),
-        }
+    run_config["prefix_cache_info"] = {
+        "prefix_tokens": prefix_len,
+        "cache_creation_ms": round(prefix_creation_ms, 3),
+        "cache_size_bytes": prefix_cache_size_bytes,
+        "cache_size_kb": round(prefix_cache_size_bytes / 1024, 2),
+        "note": ("cache_creation_ms is a one-time cost amortised over all examples."),
+    }
 
     output_doc = {
         "run_config": run_config,

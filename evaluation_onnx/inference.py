@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 import onnxruntime as ort
 
-from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.config import MAX_NEW_TOKENS
 from evaluation_onnx.cache import Cache, kv_cache_bytes, kv_cache_tokens, run_segment
 

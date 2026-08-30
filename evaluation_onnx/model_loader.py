@@ -20,6 +20,7 @@ from evaluation_lib.config import MODEL_DISPLAY_NAMES, MODEL_ONNX_DIRS
 _PROVIDERS_BY_DEVICE: dict[str, list[str]] = {
     "cpu": ["CPUExecutionProvider"],
     "coreml": ["CoreMLExecutionProvider", "CPUExecutionProvider"],
+    "cuda": ["CUDAExecutionProvider", "CPUExecutionProvider"],
 }
 
 # QNN backend names -> shared-library stem (prefix/suffix added at runtime).
@@ -76,19 +77,19 @@ def _qnn_providers(backend: str, precision: str, lib_path: str | None) -> list:
     return [("QnnExecutionProvider", options), "CPUExecutionProvider"]
 
 
-def onnx_model_path(model_key: str, precision: str) -> Path:
+def onnx_model_path(model_key: str, precision: str, model_path: Path | None = None) -> Path:
     """Return the ``model.onnx`` path for *model_key* at *precision*."""
-    return MODEL_ONNX_DIRS[model_key] / precision / "model.onnx"
+    return model_path or MODEL_ONNX_DIRS[model_key] / precision / "model.onnx"
 
 
-def onnx_model_size_mb(model_key: str, precision: str) -> float:
+def onnx_model_size_mb(model_key: str, precision: str, model_path: Path | None = None) -> float:
     """Return the on-disk size (MB) of the model, including external weights.
 
     Mirrors ``model_weights_mb``/``gguf_model_size_mb`` in the other
     evaluation packages -- a static, precision-dependent weights size to
     report alongside runtime metrics.
     """
-    model_path = onnx_model_path(model_key, precision)
+    model_path = onnx_model_path(model_key, precision, model_path)
     total_bytes = model_path.stat().st_size
     model = onnx.load(str(model_path), load_external_data=False)
     external_files = {
@@ -114,6 +115,7 @@ def load_session(
     device: str,
     qnn_backend: str = "htp",
     qnn_lib_path: str | None = None,
+    model_path: Path | None = None,
 ) -> ort.InferenceSession:
     """Load an ONNX Runtime inference session for *model_key* at *precision*.
 
@@ -135,7 +137,7 @@ def load_session(
         (e.g. ``"/opt/qcom/qnn/lib/aarch64-android/libQnnHtp.so"``).
         When ``None`` the OS-default library name is used.
     """
-    model_path = onnx_model_path(model_key, precision)
+    model_path = onnx_model_path(model_key, precision, model_path)
     if not model_path.exists():
         raise FileNotFoundError(
             f"{model_path} not found -- export/quantize this model first "
@@ -147,7 +149,7 @@ def load_session(
     else:
         providers = _PROVIDERS_BY_DEVICE[device]
     print(
-        f"[model] Loading {MODEL_DISPLAY_NAMES[model_key]} ({precision})"
+        f"[model] Loading {MODEL_DISPLAY_NAMES.get(model_key, model_key)} ({precision})"
         f" from {model_path.parent.name} → providers={providers}"
     )
     sess_options = ort.SessionOptions()
@@ -161,6 +163,7 @@ def load_cpu_bootstrap_session(
     model_key: str,
     precision: str,
     device: str,
+    model_path: Path | None = None,
 ) -> ort.InferenceSession | None:
     """Load a one-token CPU bootstrap session for CoreML decoder graphs.
 
@@ -171,7 +174,7 @@ def load_cpu_bootstrap_session(
     """
     if device != "coreml":
         return None
-    model_path = onnx_model_path(model_key, precision)
+    model_path = onnx_model_path(model_key, precision, model_path)
     options = ort.SessionOptions()
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     print("[model] Loading one-token CPU bootstrap session for CoreML KV-cache setup")

@@ -32,11 +32,9 @@ qnn     — QnnExecutionProvider (Qualcomm Snapdragon devices; Windows on
 
 Mode
 -----
-Only prefix_cache-style caching is implemented (system prompt ingested once,
-Reused via a cloned KV-cache dict for every example) since ONNX Runtime's
-decoder-with-past graphs are inherently a from-scratch-only ("no_cache"
-would just mean an empty starting cache each phase) or KV-cache design --
-see evaluation_onnx/cache.py.
+Only prefix-cache-style caching is implemented: the system prompt is ingested
+once and its KV-cache dict is cloned for every example. See
+``evaluation_onnx/cache.py``.
 
 Usage
 ------
@@ -68,21 +66,23 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from evaluation_lib.boundary import find_tools_query_boundary
+from evaluation_lib.compatibility import canonical_expected, legacy_prompt_spec, parse_prediction
 from evaluation_lib.config import (
     DATASET_DEFAULT,
     MODEL_DISPLAY_NAMES,
     MODEL_PATHS,
     ONNX_PRECISIONS,
+    SYSTEM_PROMPT,
     WARMUP_EXAMPLES,
 )
 from evaluation_lib.metrics import aggregate_metrics, compute_quality
-from evaluation_lib.output_parser import extract_predicted_tool
 from evaluation_lib.prompt import (
     build_full_prompt,
     build_system_prefix_text,
     build_tools_only_prompt,
 )
 from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
+from evaluation_lib.run_context import load_prompt_spec
 from evaluation_onnx.cache import (
     Cache,
     clone_cache,
@@ -95,6 +95,7 @@ from evaluation_onnx.model_loader import (
     load_cpu_bootstrap_session,
     load_session,
     load_text_tokenizer,
+    onnx_model_path,
     onnx_model_size_mb,
 )
 
@@ -120,9 +121,15 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--model",
-        choices=list(MODEL_PATHS),
         required=True,
-        help="Model to benchmark",
+        help="Model label (legacy key, or exact manifest model name with explicit paths).",
+    )
+    p.add_argument("--onnx-path", type=Path, default=None, help="Explicit ONNX model.onnx path.")
+    p.add_argument(
+        "--tokenizer-path",
+        type=Path,
+        default=None,
+        help="Explicit merged Transformers checkpoint used for tokenization.",
     )
     p.add_argument(
         "--precision",
@@ -138,12 +145,19 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--manifest", type=Path, default=None, help="Version manifest supplying prompt rules."
+    )
+    p.add_argument(
+        "--run-id", default=None, help="Optional pipeline run identifier recorded in output."
+    )
+    p.add_argument(
         "--device",
-        choices=["auto", "cpu", "coreml", "qnn"],
+        choices=["auto", "cpu", "coreml", "cuda", "qnn"],
         default="auto",
         help=(
             "Execution provider. "
             "coreml: Apple ANE/GPU (macOS only). "
+            "cuda: CUDAExecutionProvider with CPU fallback. "
             "qnn: Qualcomm AI Engine via QNN SDK (Snapdragon devices). "
             "auto: coreml on Apple Silicon, qnn if QnnExecutionProvider is "
             "available, otherwise cpu."
@@ -201,9 +215,17 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     device = resolve_device(args.device)
+    prompt_spec, manifest_provenance = load_prompt_spec(args.manifest)
+    prompt_spec = prompt_spec or legacy_prompt_spec(SYSTEM_PROMPT)
+    if (args.onnx_path is None or args.tokenizer_path is None) and args.model not in MODEL_PATHS:
+        raise ValueError("--onnx-path and --tokenizer-path are required for a non-legacy --model")
+    onnx_path = args.onnx_path
+    resolved_onnx_path = onnx_path or onnx_model_path(args.model, args.precision)
+    tokenizer_path = args.tokenizer_path or MODEL_PATHS[args.model]
+    model_name = MODEL_DISPLAY_NAMES.get(args.model, args.model)
 
     print("=== ONNX Runtime Benchmark ===")
-    print(f"  model     : {args.model} ({MODEL_DISPLAY_NAMES[args.model]})")
+    print(f"  model     : {args.model} ({model_name})")
     print(f"  machine   : {args.machine}")
     print(f"  precision : {args.precision}")
     print(f"  device    : {device}")
@@ -220,15 +242,17 @@ def main() -> None:
         device,
         qnn_backend=args.qnn_backend,
         qnn_lib_path=args.qnn_lib_path,
+        model_path=onnx_path,
     )
-    bootstrap_session = load_cpu_bootstrap_session(args.model, args.precision, device)
-    weights_mb = onnx_model_size_mb(args.model, args.precision)
+    bootstrap_session = load_cpu_bootstrap_session(
+        args.model, args.precision, device, model_path=onnx_path
+    )
+    weights_mb = onnx_model_size_mb(args.model, args.precision, model_path=onnx_path)
     print(f"[model] ONNX file size: {weights_mb:.1f} MB ({args.precision} on {device})\n")
 
-    text_tokenizer = load_text_tokenizer(MODEL_PATHS[args.model])
+    text_tokenizer = load_text_tokenizer(tokenizer_path)
     eos_token_ids: set[int] = set(
-        transformers.GenerationConfig.from_pretrained(str(MODEL_PATHS[args.model])).eos_token_id
-        or []
+        transformers.GenerationConfig.from_pretrained(str(tokenizer_path)).eos_token_id or []
     )
     if text_tokenizer.eos_token_id is not None:
         eos_token_ids.add(text_tokenizer.eos_token_id)
@@ -236,7 +260,7 @@ def main() -> None:
     def tok(text: str) -> np.ndarray:
         return text_tokenizer(text, return_tensors="np").input_ids.astype(np.int64)
 
-    system_prefix_text = build_system_prefix_text(text_tokenizer)
+    system_prefix_text = build_system_prefix_text(text_tokenizer, prompt_spec)
     system_tokens_template = (
         tok(system_prefix_text) if system_prefix_text else (np.empty((1, 0), dtype=np.int64))
     )
@@ -256,7 +280,7 @@ def main() -> None:
     prefix_cache_size_bytes = kv_cache_bytes(prefix_cache)
 
     _sample_prompt = build_full_prompt(
-        text_tokenizer, dataset[0]["user_request"], dataset[0]["available_tools"]
+        text_tokenizer, dataset[0]["user_request"], dataset[0]["available_tools"], prompt_spec
     )
     _full_ids = tok(_sample_prompt)
     if not np.array_equal(_full_ids[:, :system_len], system_tokens_template):
@@ -277,13 +301,12 @@ def main() -> None:
     for idx, example in enumerate(dataset):
         user_request = example["user_request"]
         available_tools = example["available_tools"]
-        expected = example["answer"]
-        tool_names = {t["name"] for t in available_tools}
+        expected = canonical_expected(example["answer"], prompt_spec)
 
-        full_prompt = build_full_prompt(text_tokenizer, user_request, available_tools)
+        full_prompt = build_full_prompt(text_tokenizer, user_request, available_tools, prompt_spec)
         full_ids = tok(full_prompt)
 
-        tools_only_prompt = build_tools_only_prompt(text_tokenizer, available_tools)
+        tools_only_prompt = build_tools_only_prompt(text_tokenizer, available_tools, prompt_spec)
         tools_only_ids = tok(tools_only_prompt)
         boundary = find_tools_query_boundary(full_ids[0].tolist(), tools_only_ids[0].tolist())
 
@@ -319,7 +342,8 @@ def main() -> None:
             tools_prefill_tokens=tools_ids.shape[1],
         )
 
-        predicted = extract_predicted_tool(timing["generated_text"], tool_names)
+        parsed = parse_prediction(timing["generated_text"], available_tools, prompt_spec)
+        predicted = parsed.canonical_tool_name
         correct = predicted == expected
 
         if not is_warmup:
@@ -335,6 +359,9 @@ def main() -> None:
                     "user_request": user_request,
                     "expected": expected,
                     "predicted": predicted,
+                    "raw_model_output": parsed.raw_output,
+                    "parsed_model_output": parsed.parsed_output,
+                    "invalid_output_reason": parsed.invalid_reason,
                     "correct": correct,
                     **timing,
                 }
@@ -358,8 +385,9 @@ def main() -> None:
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     run_config: dict[str, Any] = {
         "model_key": args.model,
-        "model_name": MODEL_DISPLAY_NAMES[args.model],
-        "model_path": str(MODEL_PATHS[args.model]),
+        "model_name": model_name,
+        "model_path": str(resolved_onnx_path),
+        "tokenizer_path": str(tokenizer_path),
         "machine": args.machine,
         "mode": "prefix_cache",
         "device": device,
@@ -377,6 +405,12 @@ def main() -> None:
         "qnn_lib_path": args.qnn_lib_path if device == "qnn" else None,
         "transformers_version": transformers.__version__,
         "model_weights_mb": weights_mb,
+        "run_id": args.run_id,
+        "prompt": {
+            "template_id": prompt_spec.template_id,
+            "output_format": prompt_spec.output_format,
+            **manifest_provenance,
+        },
         "prefill_split_info": build_prefill_split_info(),
         "prefix_cache_info": {
             "prefix_tokens": prefix_len,

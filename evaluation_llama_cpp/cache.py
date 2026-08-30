@@ -61,9 +61,7 @@ def kv_cache_bytes(llm: Llama) -> int:
     return int(llama_cpp_capi.llama_state_get_size(llm.ctx))
 
 
-def compute_prefix_cache(
-    llm: Llama, system_tokens: list[int]
-) -> tuple[LlamaState, int, float]:
+def compute_prefix_cache(llm: Llama, system_tokens: list[int]) -> tuple[LlamaState, int, float]:
     """Pre-compute and save the KV-cache state for the static system prompt.
 
     Returns

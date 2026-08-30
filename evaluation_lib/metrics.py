@@ -113,9 +113,7 @@ def compute_quality(per_example: list[dict], dataset: list[dict], warmup: int) -
 
     correct = sum(1 for e in per_example if e["correct"])
 
-    none_pairs = [
-        (e, ex) for e, ex in zip(per_example, measured) if ex["answer"] == "none"
-    ]
+    none_pairs = [(e, ex) for e, ex in zip(per_example, measured) if ex["answer"] == "none"]
     none_correct = sum(1 for e, _ in none_pairs if e["predicted"] == "none")
     none_total = len(none_pairs)
 

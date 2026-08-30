@@ -88,9 +88,9 @@ mix historical reports from another run.
 
 - The standard benchmark mode is `prefix_cache`: it reuses the precomputed
   static prompt prefix.
-- Do not schedule `kv_cache` or `no_cache` in the benchmark matrix.
-  They are retained only in legacy direct-engine commands until those commands
-  are refactored.
+- Do not schedule or expose `kv_cache` or `no_cache`. Historical reports may
+  retain those labels, but all direct and pipeline evaluator interfaces use
+  `prefix_cache` only.
 
 ## Change discipline
 

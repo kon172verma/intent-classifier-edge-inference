@@ -2,24 +2,8 @@
 """
 Baseline inference benchmark: HF Transformers + PyTorch FP16.
 
-Modes
-------
-no_cache     — No KV cache.  Each decode step re-processes all tokens.
-kv_cache     — Standard decode-time KV cache (default transformers behaviour).
-prefix_cache — Static system-prompt prefix pre-computed once; only the dynamic
-               per-example suffix (tools + user request) is processed at
-               inference time.  Cache creation time is reported separately.
-
-Usage
-------
-    # Activate the project venv first: source .venv/bin/activate
-    python evaluation_baseline/run.py --model qwen3 --mode no_cache
-    python evaluation_baseline/run.py --model llama3 --mode kv_cache
-    python evaluation_baseline/run.py --model qwen3 --mode prefix_cache --device mps
-
-Output
-------
-    evaluation_baseline/results/<model>_<machine>_<device>_<mode>_<dtype>_<timestamp>.json
+All direct and pipeline runs use prefix_cache. A static system prompt is
+pre-computed once and cloned per example.
 """
 
 from __future__ import annotations
@@ -53,21 +37,23 @@ from evaluation_baseline.inference import (
 )
 from evaluation_baseline.model_loader import load_model_and_tokenizer
 from evaluation_lib.boundary import find_tools_query_boundary
+from evaluation_lib.compatibility import canonical_expected, legacy_prompt_spec, parse_prediction
 from evaluation_lib.config import (
     DATASET_DEFAULT,
     MODEL_DISPLAY_NAMES,
     MODEL_PATHS,
+    SYSTEM_PROMPT,
     WARMUP_EXAMPLES,
 )
 from evaluation_lib.device import resolve_device
 from evaluation_lib.metrics import aggregate_metrics, compute_quality
-from evaluation_lib.output_parser import extract_predicted_tool
 from evaluation_lib.prompt import (
     build_full_prompt,
     build_system_prefix_text,
     build_tools_only_prompt,
 )
 from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
+from evaluation_lib.run_context import load_prompt_spec
 from evaluation_lib.system_info import model_weights_mb
 
 _RESULTS_DIR = _REPO_ROOT / "evaluation_baseline" / "results"
@@ -85,15 +71,14 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--model",
-        choices=list(MODEL_PATHS),
         required=True,
-        help="Model to benchmark",
+        help="Model label (legacy key, or the exact manifest model name with --model-path).",
     )
     p.add_argument(
-        "--mode",
-        choices=["no_cache", "kv_cache", "prefix_cache"],
-        default="no_cache",
-        help="Caching mode",
+        "--model-path",
+        type=Path,
+        default=None,
+        help="Explicit merged Transformers checkpoint path (for pipeline execution).",
     )
     p.add_argument(
         "--device",
@@ -140,6 +125,12 @@ def parse_args() -> argparse.Namespace:
         default=WARMUP_EXAMPLES,
         help="Number of warmup examples excluded from measurements",
     )
+    p.add_argument(
+        "--manifest", type=Path, default=None, help="Version manifest supplying prompt rules."
+    )
+    p.add_argument(
+        "--run-id", default=None, help="Optional pipeline run identifier recorded in output."
+    )
     return p.parse_args()
 
 
@@ -151,10 +142,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     device = resolve_device(args.device)
-    mode = args.mode
+    mode = "prefix_cache"
+    prompt_spec, manifest_provenance = load_prompt_spec(args.manifest)
+    prompt_spec = prompt_spec or legacy_prompt_spec(SYSTEM_PROMPT)
+    if args.model_path is None and args.model not in MODEL_PATHS:
+        raise ValueError("--model-path is required when --model is not a legacy model key")
+    model_path = args.model_path or MODEL_PATHS[args.model]
+    model_name = MODEL_DISPLAY_NAMES.get(args.model, args.model)
 
     print("=== Baseline Benchmark ===")
-    print(f"  model   : {args.model} ({MODEL_DISPLAY_NAMES[args.model]})")
+    print(f"  model   : {args.model} ({model_name})")
     print(f"  machine : {args.machine}")
     print(f"  mode    : {mode}")
     print(f"  device  : {device}")
@@ -166,7 +163,7 @@ def main() -> None:
         dataset: list[dict] = json.load(f)
     print(f"[data] Loaded {len(dataset)} examples from {args.dataset.name}\n")
 
-    model, tokenizer = load_model_and_tokenizer(args.model, device, args.dtype)
+    model, tokenizer = load_model_and_tokenizer(args.model, device, args.dtype, model_path)
     weights_mb = model_weights_mb(model)
     print(f"[model] Parameter + buffer size: {weights_mb:.1f} MB ({args.dtype} on {device})\n")
 
@@ -177,7 +174,7 @@ def main() -> None:
     # prefix_cache) to split prefill into 3 phases: system prompt -> tools
     # list -> user query. system_len is constant across examples since the
     # system prompt text never changes.
-    _system_prefix_text = build_system_prefix_text(tokenizer)
+    _system_prefix_text = build_system_prefix_text(tokenizer, prompt_spec)
     system_len = (
         tokenizer(_system_prefix_text, return_tensors="pt").input_ids.shape[1]
         if _system_prefix_text
@@ -189,32 +186,32 @@ def main() -> None:
     prefix_creation_ms = 0.0
     prefix_cache_size_bytes = 0
 
-    if mode == "prefix_cache":
-        prefix_past_kv, prefix_len, prefix_creation_ms = compute_prefix_cache(
-            model, tokenizer, device
-        )
-        prefix_cache_size_bytes = kv_cache_bytes(prefix_past_kv)
+    prefix_past_kv, prefix_len, prefix_creation_ms = compute_prefix_cache(
+        model, tokenizer, device, prompt_spec
+    )
+    prefix_cache_size_bytes = kv_cache_bytes(prefix_past_kv)
 
-        # Verify prefix token alignment against the first dataset example.
-        _sample_prompt = build_full_prompt(
-            tokenizer,
-            dataset[0]["user_request"],
-            dataset[0]["available_tools"],
-        )
-        _full_ids = tokenizer(_sample_prompt, return_tensors="pt").input_ids
-        _prefix_ids = tokenizer(_system_prefix_text, return_tensors="pt").input_ids
-        computed_prefix_len = _prefix_ids.shape[1]
+    # Verify prefix token alignment against the first dataset example.
+    _sample_prompt = build_full_prompt(
+        tokenizer,
+        dataset[0]["user_request"],
+        dataset[0]["available_tools"],
+        prompt_spec,
+    )
+    _full_ids = tokenizer(_sample_prompt, return_tensors="pt").input_ids
+    _prefix_ids = tokenizer(_system_prefix_text, return_tensors="pt").input_ids
+    computed_prefix_len = _prefix_ids.shape[1]
 
-        if not torch.equal(_full_ids[:, :computed_prefix_len], _prefix_ids):
-            print(
-                "[prefix_cache] WARNING: prefix tokens do not align with full "
-                "prompt tokens. Falling back to full prompt (no prefix savings)."
-            )
-            prefix_past_kv = None
-            prefix_len = 0
-        else:
-            prefix_len = computed_prefix_len
-            print(f"[prefix_cache] Prefix alignment verified. prefix_len={prefix_len} tokens.\n")
+    if not torch.equal(_full_ids[:, :computed_prefix_len], _prefix_ids):
+        print(
+            "[prefix_cache] WARNING: prefix tokens do not align with full "
+            "prompt tokens. Falling back to full prompt (no prefix savings)."
+        )
+        prefix_past_kv = None
+        prefix_len = 0
+    else:
+        prefix_len = computed_prefix_len
+        print(f"[prefix_cache] Prefix alignment verified. prefix_len={prefix_len} tokens.\n")
 
     # ------------------------------------------------------------------
     # Inference loop
@@ -225,10 +222,9 @@ def main() -> None:
     for idx, example in enumerate(dataset):
         user_request = example["user_request"]
         available_tools = example["available_tools"]
-        expected = example["answer"]
-        tool_names = {t["name"] for t in available_tools}
+        expected = canonical_expected(example["answer"], prompt_spec)
 
-        full_prompt = build_full_prompt(tokenizer, user_request, available_tools)
+        full_prompt = build_full_prompt(tokenizer, user_request, available_tools, prompt_spec)
         full_ids = tokenizer(full_prompt, return_tensors="pt").input_ids.to(device)
 
         is_warmup = idx < args.warmup
@@ -238,58 +234,43 @@ def main() -> None:
             else f"[{idx - args.warmup + 1:3d}/{len(dataset) - args.warmup}]"
         )
 
-        if mode == "no_cache":
-            timing = run_inference(model, tokenizer, full_ids, mode, device, ttft_capture)
+        tools_only_prompt = build_tools_only_prompt(tokenizer, available_tools, prompt_spec)
+        tools_only_ids = tokenizer(tools_only_prompt, return_tensors="pt").input_ids.to(device)
+        boundary = find_tools_query_boundary(full_ids[0].tolist(), tools_only_ids[0].tolist())
+        if prefix_past_kv is not None:
+            cache_after_system = clone_cache(prefix_past_kv)
+            system_prefill_ms = 0.0
+            system_prefill_tokens = prefix_len
         else:
-            # kv_cache & prefix_cache: split prefill into 3 phases -- system
-            # prompt, tools list, user query -- timed separately. In
-            # production the system prompt and tools list are static across
-            # many requests while only the query changes per call, so this
-            # isolates the true per-request cost (user query + decode).
-            tools_only_prompt = build_tools_only_prompt(tokenizer, available_tools)
-            tools_only_ids = tokenizer(tools_only_prompt, return_tensors="pt").input_ids.to(device)
-            boundary = find_tools_query_boundary(full_ids[0].tolist(), tools_only_ids[0].tolist())
-
-            if mode == "prefix_cache" and prefix_past_kv is not None:
-                # System prompt was already ingested once outside the loop
-                # (compute_prefix_cache): zero incremental cost per example.
-                cache_after_system = clone_cache(prefix_past_kv)
-                system_prefill_ms = 0.0
-                system_prefill_tokens = prefix_len
-            else:
-                # kv_cache mode has no persistent cache across examples, so
-                # the system prompt is re-ingested (and re-timed) every call.
-                system_ids = full_ids[:, :system_len]
-                cache_after_system, system_prefill_ms = ingest_prefix_segment(
-                    model, system_ids, device, past_key_values=None
-                )
-                system_prefill_tokens = system_len
-
-            tools_ids = full_ids[:, system_len:boundary]
-            query_ids = full_ids[:, boundary:]
-            total_len = full_ids.shape[1]
-            attn_mask = torch.ones(1, total_len, dtype=torch.long, device=device)
-
-            cache_after_tools, tools_prefill_ms = ingest_prefix_segment(
-                model, tools_ids, device, past_key_values=cache_after_system
+            system_ids = full_ids[:, :system_len]
+            cache_after_system, system_prefill_ms = ingest_prefix_segment(
+                model, system_ids, device, past_key_values=None
             )
-            timing = run_inference(
-                model,
-                tokenizer,
-                query_ids,
-                mode,
-                device,
-                ttft_capture,
-                past_key_values=cache_after_tools,
-                attention_mask=attn_mask,
-                system_prefill_ms=system_prefill_ms,
-                system_prefill_tokens=system_prefill_tokens,
-                tools_prefill_ms=tools_prefill_ms,
-                tools_prefill_tokens=tools_ids.shape[1],
-                report_prefill_split=True,
-            )
+            system_prefill_tokens = system_len
+        tools_ids = full_ids[:, system_len:boundary]
+        query_ids = full_ids[:, boundary:]
+        total_len = full_ids.shape[1]
+        attn_mask = torch.ones(1, total_len, dtype=torch.long, device=device)
+        cache_after_tools, tools_prefill_ms = ingest_prefix_segment(
+            model, tools_ids, device, past_key_values=cache_after_system
+        )
+        timing = run_inference(
+            model,
+            tokenizer,
+            query_ids,
+            device,
+            ttft_capture,
+            past_key_values=cache_after_tools,
+            attention_mask=attn_mask,
+            system_prefill_ms=system_prefill_ms,
+            system_prefill_tokens=system_prefill_tokens,
+            tools_prefill_ms=tools_prefill_ms,
+            tools_prefill_tokens=tools_ids.shape[1],
+            report_prefill_split=True,
+        )
 
-        predicted = extract_predicted_tool(timing["generated_text"], tool_names)
+        parsed = parse_prediction(timing["generated_text"], available_tools, prompt_spec)
+        predicted = parsed.canonical_tool_name
         correct = predicted == expected
 
         if not is_warmup:
@@ -305,6 +286,9 @@ def main() -> None:
                     "user_request": user_request,
                     "expected": expected,
                     "predicted": predicted,
+                    "raw_model_output": parsed.raw_output,
+                    "parsed_model_output": parsed.parsed_output,
+                    "invalid_output_reason": parsed.invalid_reason,
                     "correct": correct,
                     **timing,
                 }
@@ -328,8 +312,8 @@ def main() -> None:
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     run_config: dict[str, Any] = {
         "model_key": args.model,
-        "model_name": MODEL_DISPLAY_NAMES[args.model],
-        "model_path": str(MODEL_PATHS[args.model]),
+        "model_name": model_name,
+        "model_path": str(model_path),
         "machine": args.machine,
         "mode": mode,
         "device": device,
@@ -344,22 +328,25 @@ def main() -> None:
         "torch_version": torch.__version__,
         "transformers_version": transformers.__version__,
         "model_weights_mb": weights_mb,
+        "run_id": args.run_id,
+        "prompt": {
+            "template_id": prompt_spec.template_id,
+            "output_format": prompt_spec.output_format,
+            **manifest_provenance,
+        },
     }
 
-    if mode in ("kv_cache", "prefix_cache"):
-        run_config["prefill_split_info"] = build_prefill_split_info()
-
-    if mode == "prefix_cache":
-        run_config["prefix_cache_info"] = {
-            "prefix_tokens": prefix_len,
-            "cache_creation_ms": round(prefix_creation_ms, 3),
-            "cache_size_bytes": prefix_cache_size_bytes,
-            "cache_size_kb": round(prefix_cache_size_bytes / 1024, 2),
-            "note": (
-                "cache_creation_ms is a one-time cost amortised over all examples. "
-                "prefill_latency_ms in per_example reflects only dynamic suffix tokens."
-            ),
-        }
+    run_config["prefill_split_info"] = build_prefill_split_info()
+    run_config["prefix_cache_info"] = {
+        "prefix_tokens": prefix_len,
+        "cache_creation_ms": round(prefix_creation_ms, 3),
+        "cache_size_bytes": prefix_cache_size_bytes,
+        "cache_size_kb": round(prefix_cache_size_bytes / 1024, 2),
+        "note": (
+            "cache_creation_ms is a one-time cost amortised over all examples. "
+            "prefill_latency_ms in per_example reflects only dynamic suffix tokens."
+        ),
+    }
 
     output_doc = {
         "run_config": run_config,

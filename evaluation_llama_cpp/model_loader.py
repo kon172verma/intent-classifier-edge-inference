@@ -22,7 +22,13 @@ def gguf_model_path(model_key: str, quant: str) -> Path:
     return MODEL_GGUF_DIRS[model_key] / f"{stem}-{quant}.gguf"
 
 
-def load_model(model_key: str, quant: str, device: str, n_ctx: int = N_CTX_DEFAULT) -> Llama:
+def load_model(
+    model_key: str,
+    quant: str,
+    device: str,
+    n_ctx: int = N_CTX_DEFAULT,
+    model_path: Path | None = None,
+) -> Llama:
     """Load the quantized GGUF model for *model_key* at *quant* level.
 
     Parameters
@@ -33,7 +39,7 @@ def load_model(model_key: str, quant: str, device: str, n_ctx: int = N_CTX_DEFAU
     n_ctx:
         Context window size (must be >= the longest prompt in the dataset).
     """
-    model_path = gguf_model_path(model_key, quant)
+    model_path = model_path or gguf_model_path(model_key, quant)
     if not model_path.exists():
         raise FileNotFoundError(
             f"GGUF model not found: {model_path}\n"
@@ -43,7 +49,7 @@ def load_model(model_key: str, quant: str, device: str, n_ctx: int = N_CTX_DEFAU
 
     n_gpu_layers = -1 if device == "mps" else 0
     print(
-        f"[model] Loading {MODEL_DISPLAY_NAMES[model_key]} ({quant})"
+        f"[model] Loading {MODEL_DISPLAY_NAMES.get(model_key, model_key)} ({quant})"
         f" from {model_path.name} → device={device} (n_gpu_layers={n_gpu_layers})"
     )
     llm = Llama(
@@ -57,9 +63,9 @@ def load_model(model_key: str, quant: str, device: str, n_ctx: int = N_CTX_DEFAU
     return llm
 
 
-def gguf_model_size_mb(model_key: str, quant: str) -> float:
+def gguf_model_size_mb(model_key: str, quant: str, model_path: Path | None = None) -> float:
     """Return the on-disk GGUF file size in MB (analogous to model_weights_mb)."""
-    model_path = gguf_model_path(model_key, quant)
+    model_path = model_path or gguf_model_path(model_key, quant)
     return round(model_path.stat().st_size / (1024 * 1024), 2)
 
 

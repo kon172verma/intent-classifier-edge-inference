@@ -7,6 +7,7 @@ from typing import Any
 
 import torch
 
+from evaluation_lib.compatibility import PromptSpec
 from evaluation_lib.device import synchronize
 from evaluation_lib.prompt import build_system_prefix_text
 
@@ -112,7 +113,7 @@ def clone_cache(cache: Any) -> Any:
 
 
 def compute_prefix_cache(
-    model: Any, tokenizer: Any, device: str
+    model: Any, tokenizer: Any, device: str, prompt_spec: PromptSpec | None = None
 ) -> tuple[Any, int, float]:
     """Pre-compute the KV cache for the static system-prompt prefix.
 
@@ -125,7 +126,7 @@ def compute_prefix_cache(
     creation_ms
         Wall-clock time to compute the cache (ms).  This is a one-time cost.
     """
-    prefix_text = build_system_prefix_text(tokenizer)
+    prefix_text = build_system_prefix_text(tokenizer, prompt_spec)
     if not prefix_text:
         print(
             "[prefix_cache] WARNING: could not build system prefix text. "
@@ -146,8 +147,7 @@ def compute_prefix_cache(
 
     cache_kb = kv_cache_bytes(out.past_key_values) / 1024
     print(
-        f"[prefix_cache] Done. creation_time={creation_ms:.1f} ms,"
-        f" cache_size={cache_kb:.1f} KB\n"
+        f"[prefix_cache] Done. creation_time={creation_ms:.1f} ms, cache_size={cache_kb:.1f} KB\n"
     )
     return out.past_key_values, prefix_len, creation_ms
 
@@ -187,9 +187,7 @@ def ingest_prefix_segment(
     synchronize(device)
     t0 = time.perf_counter()
     with torch.no_grad():
-        out = model(
-            input_ids=segment_ids, past_key_values=past_key_values, use_cache=True
-        )
+        out = model(input_ids=segment_ids, past_key_values=past_key_values, use_cache=True)
     synchronize(device)
     elapsed_ms = (time.perf_counter() - t0) * 1000
     return out.past_key_values, elapsed_ms

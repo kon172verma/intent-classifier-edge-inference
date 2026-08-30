@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -17,7 +18,10 @@ DTYPE_MAP: dict[str, torch.dtype] = {
 
 
 def load_model_and_tokenizer(
-    model_key: str, device: str, dtype_name: str = "float16"
+    model_key: str,
+    device: str,
+    dtype_name: str = "float16",
+    model_path: Path | None = None,
 ) -> tuple[Any, Any]:
     """Load the tokenizer and model for *model_key*, placing the model on *device*.
 
@@ -35,13 +39,13 @@ def load_model_and_tokenizer(
     directly with ``device_map="mps"`` causes a segfault on some transformers
     builds; the two-step approach is safe on all backends.
     """
-    model_path = MODEL_PATHS[model_key]
+    model_path = model_path or MODEL_PATHS[model_key]
     print(f"[model] Loading tokenizer from {model_path}")
     tokenizer: Any = AutoTokenizer.from_pretrained(str(model_path))
 
     dtype = DTYPE_MAP[dtype_name]
     print(
-        f"[model] Loading {MODEL_DISPLAY_NAMES[model_key]}"
+        f"[model] Loading {MODEL_DISPLAY_NAMES.get(model_key, model_key)}"
         f" → device={device}, dtype={dtype}"
     )
 

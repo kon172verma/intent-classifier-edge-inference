@@ -9,7 +9,6 @@ import torch
 from transformers import LogitsProcessor, LogitsProcessorList
 
 from evaluation_baseline.cache import kv_cache_bytes, kv_cache_tokens
-from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.config import MAX_NEW_TOKENS
 from evaluation_lib.device import synchronize
 from evaluation_lib.system_info import peak_gpu_memory_mb, reset_peak_gpu_memory
@@ -48,7 +47,6 @@ def run_inference(
     model: Any,
     tokenizer: Any,
     input_ids: torch.Tensor,
-    mode: str,
     device: str,
     ttft_capture: TTFTCapture,
     past_key_values: Any = None,
@@ -69,19 +67,15 @@ def run_inference(
         tokens — the system-prompt and tools-list tokens were already
         ingested by the caller via ``ingest_prefix_segment`` and folded into
         *past_key_values*.
-    mode:
-        ``"no_cache"`` | ``"kv_cache"`` | ``"prefix_cache"``
     past_key_values:
-        Pre-computed KV cache (``kv_cache``/``prefix_cache`` modes only).
+        Pre-computed KV cache for the static prompt prefix.
     attention_mask:
         Full mask covering both the cached prefix and the current tokens.
     system_prefill_ms, system_prefill_tokens:
         Wall-clock time / token count already spent ingesting the static
         system-prompt prefix (prefill phase 1), measured by the caller
-        before this function was invoked. Zero in ``prefix_cache`` mode
-        after the initial one-time cache creation (the cost is amortised
-        and reported separately in ``run_config``), non-zero in
-        ``kv_cache`` mode where it is repeated every call.
+        before this function was invoked. It is zero after the initial
+        one-time cache creation, which is reported separately in run metadata.
     tools_prefill_ms, tools_prefill_tokens:
         Wall-clock time / token count already spent ingesting the
         available-tools list (prefill phase 2), measured by the caller.
@@ -94,11 +88,9 @@ def run_inference(
         ``preprocessing_latency_ms`` and the ``system_prefill_*`` /
         ``tools_prefill_*`` fields.
     """
-    use_cache = mode != "no_cache"
-
     generate_kwargs: dict[str, Any] = {
         "max_new_tokens": MAX_NEW_TOKENS,
-        "use_cache": use_cache,
+        "use_cache": True,
         "do_sample": False,
         "logits_processor": LogitsProcessorList([ttft_capture]),
         "return_dict_in_generate": True,
@@ -149,7 +141,7 @@ def run_inference(
     )
 
     final_cache = getattr(result, "past_key_values", None)
-    kv_bytes = kv_cache_bytes(final_cache) if use_cache else 0
+    kv_bytes = kv_cache_bytes(final_cache)
 
     new_ids = result.sequences[0, input_ids.shape[1] :].tolist()
     generated_text = tokenizer.decode([int(i) for i in new_ids], skip_special_tokens=True)

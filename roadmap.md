@@ -2,12 +2,12 @@
 
 ## Status
 
-Phases 1 through 3 are implemented. The command remains a no-side-effect dry
-run unless `--execute` is supplied. It now supports `fetch`, `merge`, and
-`build-artifacts`: the latter builds profile-selected GGUF and ONNX variants
-from locally merged checkpoints, with calibration constrained to the manifest
-split. Evaluation and plotting remain unimplemented. `AGENTS.md` defines the
-standards that subsequent implementation must follow.
+Phases 1 through 4 are implemented. The command remains a no-side-effect dry
+run unless `--execute` is supplied. It supports `fetch`, `merge`, and
+`build-artifacts`; direct evaluators now consume manifest prompt contracts and
+resolved artifact paths. Pipeline evaluation, run isolation, and plotting
+remain unimplemented. `AGENTS.md` defines the standards that subsequent
+implementation must follow.
 
 ## Objective
 
@@ -161,10 +161,9 @@ preserving the native format each model was trained to produce.
 
 ## Cache-mode decision
 
-The pipeline benchmarks `prefix_cache` only: the static prompt prefix is
-precomputed once and reused. Do not schedule `kv_cache` or `no_cache`
-in the matrix. The older modes remain available only in legacy direct-engine
-commands until the evaluator refactor removes them.
+The pipeline and direct evaluators benchmark `prefix_cache` only: the static
+prompt prefix is precomputed once and reused. Historical reports may retain
+older cache labels, but they are no longer accepted evaluator modes.
 
 ## Historical reports and charts
 
@@ -209,11 +208,11 @@ new pipeline has produced an auditable replacement.
      separate future integration.
 
 4. **Evaluation compatibility**
-   - Make all engine runners accept resolved model/artifact paths and run
-     metadata.
-   - Add the format-aware prompt renderer, parser, and canonical mapping.
-   - Remove `kv_cache` and `no_cache` from the pipeline/evaluator interface;
-     pipeline profiles use `prefix_cache` only.
+   - [x] Make the Transformers, llama.cpp, and ONNX Runtime runners accept
+     resolved model/artifact paths and manifest/run metadata.
+   - [x] Add the format-aware prompt renderer, parser, and canonical mapping.
+   - [x] Remove `kv_cache` and `no_cache` from direct evaluator and plotting
+     interfaces; all active profiles use `prefix_cache` only.
 
 5. **Reporting and plotting**
    - Change direct defaults from `results/` to `reports/`.

@@ -15,7 +15,6 @@ from typing import Any
 
 from llama_cpp import Llama
 
-from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.config import MAX_NEW_TOKENS
 from evaluation_llama_cpp.cache import kv_cache_bytes, kv_cache_tokens, synchronize
 
