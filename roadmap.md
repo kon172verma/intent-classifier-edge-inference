@@ -74,11 +74,9 @@ Direct commands retain this local, engine-owned output behavior.
 run_results/<version>_<target>_<compute>_<timestamp>/
   manifest.lock.json
   run_summary.json
-  <model-name>_<variant>/
-    reports/
-      <engine>/
-  analysis/
-    <model-name>/<target>_<compute>.png
+  <model-name>/
+    <engine>_<variant>.json
+    comparison.png
 ```
 
 Pipeline reports and charts must never be written into the direct-command

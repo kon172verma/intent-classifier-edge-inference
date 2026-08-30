@@ -36,7 +36,9 @@ def test_workspace_locks_all_planned_report_paths_before_execution(tmp_path: Pat
     assert (workspace["root"] / "manifest.lock.json").is_file()
     assert len(workspace["lock"]["report_index"]) == 3
     for slot in workspace["lock"]["report_index"]:
-        assert slot["report"].endswith("/report.json")
+        assert slot["report"].startswith("Qwen3-0.6B/")
+        assert slot["report"].endswith(".json")
+        assert "analysis_dir" not in slot
         assert not (workspace["root"] / slot["report"]).exists()
 
     loaded = load_run_workspace(workspace["root"])

@@ -45,10 +45,7 @@ def create_run_workspace(
     for model in plan["models"]:
         for engine in model["engines"]:
             for variant in engine["evaluate_variants"]:
-                root = run_root / f"{model['name']}_{variant}"
-                report_dir = root / "reports" / engine["name"]
-                analysis_dir = root / "analysis" / engine["name"]
-                report_path = report_dir / "report.json"
+                report_path = run_root / model["name"] / f"{engine['name']}_{variant}.json"
                 report_index.append(
                     {
                         "id": _slot_id(model["name"], engine["name"], variant),
@@ -56,7 +53,6 @@ def create_run_workspace(
                         "engine": engine["name"],
                         "variant": variant,
                         "report": str(report_path.relative_to(run_root)),
-                        "analysis_dir": str(analysis_dir.relative_to(run_root)),
                     }
                 )
 

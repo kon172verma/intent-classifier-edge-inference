@@ -63,11 +63,9 @@ Pipeline runs are isolated from direct runs and write to:
 run_results/<version>_<target>_<compute>_<timestamp>/
   manifest.lock.json
   run_summary.json
-  <model-name>_<variant>/
-    reports/
-      <engine>/report.json
-  analysis/
-    <model-name>/<target>_<compute>.png
+  <model-name>/
+    <engine>_<variant>.json
+    comparison.png
 ```
 
 Every report and chart must include the run ID. A pipeline run creates one

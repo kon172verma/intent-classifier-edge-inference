@@ -117,7 +117,7 @@ class BenchmarkEvaluationTests(unittest.TestCase):
 
         plots = plot_workspace(workspace)
 
-        self.assertEqual(plots, ["analysis/Example-Model/mac_cpu.png"])
+        self.assertEqual(plots, ["Example-Model/comparison.png"])
         self.assertTrue((workspace["root"] / plots[0]).is_file())
 
 

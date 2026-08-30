@@ -36,7 +36,7 @@ def plot_workspace(workspace: dict[str, Any]) -> list[str]:
     output: list[str] = []
     for model, variant_docs in reports_by_model.items():
         variant_order = list(variant_docs)
-        out_path = workspace["root"] / "analysis" / model / f"{target}_{compute}.png"
+        out_path = workspace["root"] / model / "comparison.png"
         plot_device_model(
             target,
             compute,
