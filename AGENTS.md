@@ -62,6 +62,7 @@ Pipeline runs are isolated from direct runs and write to:
 ```text
 run_results/<version>_<timestamp>/
   manifest.lock.json
+  run_summary.json
   <model-name>_<variant>/
     reports/
     analysis/

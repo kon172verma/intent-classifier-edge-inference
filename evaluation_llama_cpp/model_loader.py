@@ -47,7 +47,7 @@ def load_model(
             "evaluation_llama_cpp/readme.md for the conversion steps."
         )
 
-    n_gpu_layers = -1 if device == "mps" else 0
+    n_gpu_layers = -1 if device in {"mps", "cuda"} else 0
     print(
         f"[model] Loading {MODEL_DISPLAY_NAMES.get(model_key, model_key)} ({quant})"
         f" from {model_path.name} → device={device} (n_gpu_layers={n_gpu_layers})"

@@ -2,11 +2,10 @@
 
 ## Status
 
-Phases 1 through 4 are implemented. The command remains a no-side-effect dry
-run unless `--execute` is supplied. It supports `fetch`, `merge`, and
-`build-artifacts`; direct evaluators now consume manifest prompt contracts and
-resolved artifact paths. Pipeline evaluation, run isolation, and plotting
-remain unimplemented. `AGENTS.md` defines the standards that subsequent
+Phases 1 through 5 are implemented. The command remains a no-side-effect dry
+run unless `--execute` is supplied. It supports `fetch`, `merge`,
+`build-artifacts`, `evaluate`, and `plot`; evaluation and plots are isolated
+in a locked run workspace. `AGENTS.md` defines the standards that subsequent
 implementation must follow.
 
 ## Objective
@@ -215,9 +214,12 @@ new pipeline has produced an auditable replacement.
      interfaces; all active profiles use `prefix_cache` only.
 
 5. **Reporting and plotting**
-   - Change direct defaults from `results/` to `reports/`.
-   - Add pipeline-specific output directories and run-ID filtering.
-   - Write a locked run index before plotting.
+   - [x] Change direct defaults from `results/` to `reports/` and direct
+     charts to `analysis/`.
+   - [x] Add pipeline-specific output directories, deterministic report paths,
+     and run-ID filtering.
+   - [x] Write `manifest.lock.json` with the planned report index before
+     evaluation or plotting; use `--run-dir` to resume a locked run.
 
 6. **Verification and cleanup**
    - Unit-test manifests, profile resolution, dynamic ID mapping, and report

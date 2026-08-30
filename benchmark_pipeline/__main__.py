@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,13 @@ from benchmark_pipeline.manifest import (
     select_engines,
     select_models,
 )
+from benchmark_pipeline.runs import (
+    RunWorkspaceError,
+    create_run_workspace,
+    load_run_workspace,
+    validate_workspace_selection,
+    write_summary,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -29,6 +37,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--manifest", type=Path, required=True, help="Path to a version manifest JSON file."
+    )
+    parser.add_argument(
+        "--run-dir",
+        type=Path,
+        default=None,
+        help="Existing run_results directory to resume for evaluate or plot.",
     )
     parser.add_argument(
         "--target", required=True, help="Target device family, such as mac, rpi, or jetson."
@@ -113,15 +127,11 @@ def execute_pipeline(
     requested_models: list[str],
     requested_engines: list[str],
     stages: list[str],
+    manifest_path: Path,
+    plan: dict[str, Any],
+    run_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Execute the acquisition, merge, and artifact-build stages available so far."""
-    unsupported = [stage for stage in stages if stage not in {"fetch", "merge", "build-artifacts"}]
-    if unsupported:
-        names = ", ".join(unsupported)
-        raise ArtifactError(
-            f"Execution is not implemented yet for stage(s): {names}. "
-            "Phases 2-3 support --stages fetch merge build-artifacts."
-        )
+    """Execute selected stages, keeping evaluate/plot outputs in a locked workspace."""
 
     models = select_models(manifest, requested_models)
     profile = resolve_profile(manifest, target, compute)
@@ -146,6 +156,46 @@ def execute_pipeline(
             calibration_data=REPO_ROOT
             / manifest["dataset"]["split_root"]
             / manifest["dataset"]["splits"]["calibration"],
+        )
+    workspace: dict[str, Any] | None = None
+    if "evaluate" in stages or "plot" in stages:
+        if run_dir is not None:
+            workspace = load_run_workspace(run_dir)
+            validate_workspace_selection(workspace, plan)
+        elif "evaluate" in stages:
+            workspace = create_run_workspace(repo_root=REPO_ROOT, manifest=manifest, plan=plan)
+        else:
+            raise RunWorkspaceError(
+                "--stages plot requires --run-dir so it can use a locked report index"
+            )
+        execution["run_id"] = workspace["run_id"]
+        execution["run_dir"] = str(workspace["root"])
+
+    reports: list[str] = []
+    if "evaluate" in stages:
+        from benchmark_pipeline.evaluation import evaluate_workspace
+
+        assert workspace is not None
+        reports = evaluate_workspace(
+            repo_root=REPO_ROOT,
+            manifest_path=manifest_path,
+            manifest=manifest,
+            plan=plan,
+            workspace=workspace,
+        )
+        execution["evaluate"] = reports
+    plots: list[str] = []
+    if "plot" in stages:
+        from benchmark_pipeline.plotting import plot_workspace
+
+        assert workspace is not None
+        plots = plot_workspace(workspace)
+        execution["plot"] = plots
+    if workspace is not None:
+        write_summary(
+            workspace,
+            reports=reports if "evaluate" in stages else None,
+            plots=plots if "plot" in stages else None,
         )
     return execution
 
@@ -182,8 +232,17 @@ def main() -> int:
             requested_models=args.models,
             requested_engines=args.engines,
             stages=plan["stages"],
+            manifest_path=args.manifest,
+            plan=plan,
+            run_dir=args.run_dir,
         )
-    except (ArtifactError, ManifestError) as exc:
+    except (
+        ArtifactError,
+        ManifestError,
+        RunWorkspaceError,
+        RuntimeError,
+        subprocess.CalledProcessError,
+    ) as exc:
         print(f"benchmark_pipeline: error: {exc}", file=sys.stderr)
         return 2
 

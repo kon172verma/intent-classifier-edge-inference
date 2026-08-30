@@ -99,8 +99,21 @@ python -m benchmark_pipeline \
 
 The command requires a prior Phase 2 merged checkpoint. Static INT8 uses only
 the manifest's `calibration.json`; it does not use `test_anchor` or full test
-data. Evaluation and plotting remain later phases. TensorRT-LLM is excluded
-from the Jetson Xavier profile; bare TensorRT is a separate future integration.
+data. `evaluate` creates an isolated `run_results/<version>_<timestamp>/`
+workspace and locks the report index before launching any evaluator; `plot`
+uses only those indexed reports. A partial run can be resumed with `--run-dir`.
+
+```bash
+python -m benchmark_pipeline \
+  --manifest manifests/v2.1.json \
+  --target rpi --compute cpu \
+  --models Qwen3-0.6B \
+  --stages evaluate plot \
+  --execute
+```
+
+TensorRT-LLM is excluded from the Jetson Xavier profile; bare TensorRT is a
+separate future integration.
 
 ## Core Question
 

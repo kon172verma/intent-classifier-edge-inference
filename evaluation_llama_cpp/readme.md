@@ -15,7 +15,8 @@ evaluation_llama_cpp/
 ├── inference.py     # Single inference pass with TTFT measurement
 ├── cache.py         # KV-state inspection, save/restore, prefix-cache pre-computation
 ├── plot_results.py  # Renders comparison charts from JSON reports
-└── results/         # JSON output files written by run.py
+├── reports/         # JSON output files written by run.py
+└── analysis/        # Charts written by plot_results.py
 ```
 
 Shared utilities (prompt construction, quality/latency aggregation, output
@@ -98,7 +99,7 @@ static system-prompt state with `save_state()` and restores it per example.
 python evaluation_llama_cpp/run.py --model qwen3 --quant Q4_K_M --device mps
 python evaluation_llama_cpp/run.py --model llama3 --quant Q8_0 --device cpu
 
-python evaluation_llama_cpp/plot_results.py --mode prefix_cache
+python evaluation_llama_cpp/plot_results.py
 ```
 
 ## Implementation notes

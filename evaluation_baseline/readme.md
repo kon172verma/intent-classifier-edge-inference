@@ -12,7 +12,8 @@ evaluation_baseline/
 ├── model_loader.py  # Loads tokenizer + model (CPU first, then .to(device))
 ├── inference.py     # Single inference pass with TTFT measurement
 ├── cache.py         # KV-cache inspection, cloning, prefix-cache pre-computation
-└── results/         # JSON output files written by run.py
+├── reports/         # JSON output files written by run.py
+└── analysis/        # Charts written by plot_results.py
 ```
 
 Shared utilities live in `evaluation_lib/` (sibling package).
@@ -38,12 +39,12 @@ python evaluation_baseline/run.py --model qwen3 --device mps
 | `--model` | required | `qwen3` or `llama3` |
 | `--device` | `auto` | `auto`, `mps`, `cpu`, or `cuda` |
 | `--dataset` | `dataset_full/sample_0001.json` | Path to dataset JSON |
-| `--output-dir` | `evaluation_baseline/results/` | Directory for JSON output |
+| `--output-dir` | `evaluation_baseline/reports/` | Directory for JSON output |
 | `--warmup` | `2` | Examples excluded from measurements (not recorded) |
 
 ## Output
 
-Results are written to `results/<model>_<device>_prefix_cache_<timestamp>.json` with
+Results are written to `reports/<model>_<device>_prefix_cache_<timestamp>.json` with
 three top-level sections:
 
 - `run_config` — model, mode, device, dtype, dataset path, library versions,

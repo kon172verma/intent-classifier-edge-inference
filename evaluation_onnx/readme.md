@@ -17,7 +17,8 @@ evaluation_onnx/
 ├── inference.py     # Single inference pass with 3-phase prefill timing
 ├── cache.py         # Explicit numpy KV-cache management, prefix-cache pre-computation
 ├── plot_results.py  # Renders comparison charts from JSON reports
-└── results/         # JSON output files written by run.py
+├── reports/         # JSON output files written by run.py
+└── analysis/        # Charts written by plot_results.py
 ```
 
 Shared utilities (prompt construction, quality/latency aggregation, output

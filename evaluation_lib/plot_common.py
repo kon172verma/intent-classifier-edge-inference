@@ -109,16 +109,20 @@ def _values_quality_memory(aggregate: dict, quality: dict) -> tuple[list, list]:
     return values, fmts
 
 
-def load_reports(results_dir: Path, mode: str | None = None) -> list[dict]:
-    """Load all JSON reports under *results_dir*, optionally filtering by *mode*."""
+def load_reports(
+    reports_dir: Path, mode: str | None = None, run_id: str | None = None
+) -> list[dict]:
+    """Load reports, optionally filtering by active mode and exact pipeline run ID."""
     reports = []
-    for path in sorted(results_dir.glob("*.json")):
+    for path in sorted(reports_dir.glob("*.json")):
         try:
             with open(path) as f:
                 doc = json.load(f)
         except (json.JSONDecodeError, OSError):
             continue
         if mode is not None and doc.get("run_config", {}).get("mode") != mode:
+            continue
+        if run_id is not None and doc.get("run_config", {}).get("run_id") != run_id:
             continue
         reports.append(doc)
     return reports

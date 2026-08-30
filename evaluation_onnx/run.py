@@ -81,6 +81,7 @@ from evaluation_lib.prompt import (
     build_system_prefix_text,
     build_tools_only_prompt,
 )
+from evaluation_lib.report_paths import resolve_report_path
 from evaluation_lib.reporting import build_prefill_split_info, print_run_summary
 from evaluation_lib.run_context import load_prompt_spec
 from evaluation_onnx.cache import (
@@ -99,7 +100,7 @@ from evaluation_onnx.model_loader import (
     onnx_model_size_mb,
 )
 
-_RESULTS_DIR = _REPO_ROOT / "evaluation_onnx" / "results"
+_REPORTS_DIR = _REPO_ROOT / "evaluation_onnx" / "reports"
 
 
 def resolve_device(device_arg: str) -> str:
@@ -200,8 +201,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--output-dir",
         type=Path,
-        default=_RESULTS_DIR,
-        help="Directory to write JSON results",
+        default=_REPORTS_DIR,
+        help="Directory to write JSON reports",
+    )
+    p.add_argument(
+        "--output-file", type=Path, default=None, help="Exact report path (pipeline use)."
     )
     p.add_argument(
         "--warmup",
@@ -431,10 +435,10 @@ def main() -> None:
         "per_example": per_example,
     }
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    out_path = (
-        args.output_dir
-        / f"{args.model}_{args.machine}_{device}_prefix_cache_{args.precision}_{ts}.json"
+    out_path = resolve_report_path(
+        args.output_dir,
+        args.output_file,
+        f"{args.model}_{args.machine}_{device}_prefix_cache_{args.precision}_{ts}.json",
     )
     with open(out_path, "w") as f:
         json.dump(output, f, indent=2)

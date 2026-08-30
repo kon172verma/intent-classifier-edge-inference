@@ -27,7 +27,7 @@ live GPU-memory query API (see evaluation_onnx/inference.py).
 Usage
 ------
     python evaluation_onnx/plot_results.py
-    python evaluation_onnx/plot_results.py --results-dir path/to/results
+    python evaluation_onnx/plot_results.py --reports-dir path/to/reports
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ if str(_REPO_ROOT) not in sys.path:
 from evaluation_lib.config import MODEL_DISPLAY_NAMES, ONNX_PRECISIONS
 from evaluation_lib.plot_common import group_reports, load_reports, plot_device_model
 
-_RESULTS_DIR = _REPO_ROOT / "evaluation_onnx" / "results"
-_CHARTS_DIR = _RESULTS_DIR / "charts"
+_REPORTS_DIR = _REPO_ROOT / "evaluation_onnx" / "reports"
+_ANALYSIS_DIR = _REPO_ROOT / "evaluation_onnx" / "analysis"
 
 PRECISION_ORDER = ONNX_PRECISIONS
 PRECISION_LABELS = {
@@ -61,15 +61,15 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(
-        "--results-dir",
+        "--reports-dir",
         type=Path,
-        default=_RESULTS_DIR,
+        default=_REPORTS_DIR,
         help="Directory containing run JSON reports",
     )
     p.add_argument(
         "--output-dir",
         type=Path,
-        default=_CHARTS_DIR,
+        default=_ANALYSIS_DIR,
         help="Directory to write PNG charts",
     )
     return p.parse_args()
@@ -77,9 +77,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    reports = load_reports(args.results_dir)
+    reports = load_reports(args.reports_dir)
     if not reports:
-        print(f"[plot] ERROR: no reports found in {args.results_dir}.")
+        print(f"[plot] ERROR: no reports found in {args.reports_dir}.")
         return
     grouped = group_reports(reports, "precision")
     for (machine, device), by_model in grouped.items():
