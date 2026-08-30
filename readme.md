@@ -115,6 +115,32 @@ python -m benchmark_pipeline \
 TensorRT-LLM is excluded from the Jetson Xavier profile; bare TensorRT is a
 separate future integration.
 
+### Mac runtime smoke checks
+
+After the relevant artifacts have been fetched, merged, and built, run the
+short Mac checks below. They execute only the first three `test_anchor`
+examples (one warm-up plus two measured examples), and the reports are marked
+`benchmark_scope: "smoke"`; they are not candidate-selection results.
+
+```bash
+# Mac CPU: verifies the CPU runtimes and artifacts.
+python -m benchmark_pipeline \
+  --manifest manifests/v2.1.json \
+  --target mac --compute cpu \
+  --models Qwen3-0.6B \
+  --stages evaluate plot --smoke --execute
+
+# Mac GPU: verifies MPS, Metal llama.cpp, and CoreML ONNX Runtime.
+python -m benchmark_pipeline \
+  --manifest manifests/v2.1.json \
+  --target mac --compute gpu \
+  --models Qwen3-0.6B \
+  --stages evaluate plot --smoke --execute
+```
+
+`--smoke` rejects RPi and Jetson targets by design. Those environments will be
+verified manually once their hardware and runtimes are installed.
+
 ## Core Question
 
 How much optimization is possible for tool-routing style inference on edge devices

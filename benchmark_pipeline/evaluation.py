@@ -49,6 +49,7 @@ def evaluate_workspace(
     manifest: dict[str, Any],
     plan: dict[str, Any],
     workspace: dict[str, Any],
+    max_examples: int | None = None,
 ) -> list[str]:
     """Run every locked report slot, failing before an accidental overwrite."""
     models = {model["name"]: {**model, "version": manifest["version"]} for model in plan["models"]}
@@ -113,6 +114,15 @@ def evaluate_workspace(
                 str(merged),
                 "--precision",
                 slot["variant"],
+            ]
+        if max_examples is not None:
+            command += [
+                "--max-examples",
+                str(max_examples),
+                "--warmup",
+                "1",
+                "--benchmark-scope",
+                "smoke",
             ]
         subprocess.run(command, cwd=repo_root, check=True)
         if not report_path.is_file():

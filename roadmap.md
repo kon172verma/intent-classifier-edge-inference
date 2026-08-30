@@ -222,10 +222,17 @@ new pipeline has produced an auditable replacement.
      evaluation or plotting; use `--run-dir` to resume a locked run.
 
 6. **Verification and cleanup**
-   - Unit-test manifests, profile resolution, dynamic ID mapping, and report
-     isolation.
-   - Run a small Mac CPU/GPU smoke suite, then RPi and Jetson profiles.
-   - Archive and only then remove legacy output folders.
+   - [x] Unit-test manifests, profile resolution, dynamic ID mapping, report
+     isolation, and smoke-run command construction.
+   - [x] Add a Mac-only `--smoke` path: it evaluates the first three
+     `test_anchor` examples with one warm-up, labels the resulting reports as
+     `smoke`, and rejects RPi/Jetson targets.
+   - [ ] Run the real Mac CPU and Mac GPU smoke suites after their selected
+     artifacts have been built. These short runs verify runtime integration,
+     not candidate quality or latency.
+   - [ ] Add RPi and Jetson verification only when those environments are set
+     up manually; they remain intentionally out of the automated smoke path.
+   - [ ] Archive and only then remove legacy output folders.
 
 ## Existing files expected to change when implementation is authorized
 

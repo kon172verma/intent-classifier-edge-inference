@@ -26,6 +26,7 @@ def create_run_workspace(
     repo_root: Path,
     manifest: dict[str, Any],
     plan: dict[str, Any],
+    benchmark_scope: str = "standard",
 ) -> dict[str, Any]:
     """Create a run directory and immutable planned-report index before execution."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -64,6 +65,7 @@ def create_run_workspace(
         "created_at_utc": datetime.now(UTC).isoformat(),
         "manifest": copy.deepcopy(manifest),
         "selection": copy.deepcopy(plan),
+        "benchmark_scope": benchmark_scope,
         "report_index": report_index,
     }
     _write_json(run_root / "manifest.lock.json", lock)
@@ -103,6 +105,15 @@ def validate_workspace_selection(workspace: dict[str, Any], plan: dict[str, Any]
         raise RunWorkspaceError(
             "The selected models, engines, or variants do not match the locked run. "
             "Use the original selection when resuming."
+        )
+
+
+def validate_workspace_scope(workspace: dict[str, Any], benchmark_scope: str) -> None:
+    """Keep a smoke run separate from a candidate-selection benchmark."""
+    if workspace["lock"].get("benchmark_scope", "standard") != benchmark_scope:
+        raise RunWorkspaceError(
+            "The requested benchmark scope does not match the locked run. "
+            "Do not resume a smoke run as a standard benchmark, or vice versa."
         )
 
 

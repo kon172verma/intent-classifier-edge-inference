@@ -24,6 +24,7 @@ from benchmark_pipeline.runs import (
     RunWorkspaceError,
     create_run_workspace,
     load_run_workspace,
+    validate_workspace_scope,
     validate_workspace_selection,
     write_summary,
 )
@@ -43,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Existing run_results directory to resume for evaluate or plot.",
+    )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Run a short Mac-only verification (three anchor examples, one warm-up).",
     )
     parser.add_argument(
         "--target", required=True, help="Target device family, such as mac, rpi, or jetson."
@@ -130,8 +136,14 @@ def execute_pipeline(
     manifest_path: Path,
     plan: dict[str, Any],
     run_dir: Path | None = None,
+    smoke: bool = False,
 ) -> dict[str, Any]:
     """Execute selected stages, keeping evaluate/plot outputs in a locked workspace."""
+
+    if smoke and target != "mac":
+        raise ManifestError("--smoke is currently supported only for --target mac")
+    if smoke and "evaluate" not in stages:
+        raise ManifestError("--smoke requires the evaluate stage")
 
     models = select_models(manifest, requested_models)
     profile = resolve_profile(manifest, target, compute)
@@ -162,8 +174,14 @@ def execute_pipeline(
         if run_dir is not None:
             workspace = load_run_workspace(run_dir)
             validate_workspace_selection(workspace, plan)
+            validate_workspace_scope(workspace, "smoke" if smoke else "standard")
         elif "evaluate" in stages:
-            workspace = create_run_workspace(repo_root=REPO_ROOT, manifest=manifest, plan=plan)
+            workspace = create_run_workspace(
+                repo_root=REPO_ROOT,
+                manifest=manifest,
+                plan=plan,
+                benchmark_scope="smoke" if smoke else "standard",
+            )
         else:
             raise RunWorkspaceError(
                 "--stages plot requires --run-dir so it can use a locked report index"
@@ -182,6 +200,7 @@ def execute_pipeline(
             manifest=manifest,
             plan=plan,
             workspace=workspace,
+            max_examples=3 if smoke else None,
         )
         execution["evaluate"] = reports
     plots: list[str] = []
@@ -217,6 +236,16 @@ def main() -> int:
         print(f"benchmark_pipeline: error: {exc}", file=sys.stderr)
         return 2
 
+    if args.smoke and args.target != "mac":
+        print(
+            "benchmark_pipeline: error: --smoke is currently supported only for --target mac",
+            file=sys.stderr,
+        )
+        return 2
+    if args.smoke and "evaluate" not in plan["stages"]:
+        print("benchmark_pipeline: error: --smoke requires the evaluate stage", file=sys.stderr)
+        return 2
+
     if not args.execute:
         if args.json:
             print(json.dumps(plan, indent=2))
@@ -235,6 +264,7 @@ def main() -> int:
             manifest_path=args.manifest,
             plan=plan,
             run_dir=args.run_dir,
+            smoke=args.smoke,
         )
     except (
         ArtifactError,

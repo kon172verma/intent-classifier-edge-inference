@@ -213,6 +213,18 @@ def parse_args() -> argparse.Namespace:
         default=WARMUP_EXAMPLES,
         help="Number of warmup examples excluded from measurements",
     )
+    p.add_argument(
+        "--max-examples",
+        type=int,
+        default=None,
+        help="Optional dataset prefix limit for a smoke run; never use for candidate selection.",
+    )
+    p.add_argument(
+        "--benchmark-scope",
+        choices=["standard", "smoke"],
+        default="standard",
+        help="Labels whether this is a full anchor benchmark or a short smoke check.",
+    )
     return p.parse_args()
 
 
@@ -238,6 +250,12 @@ def main() -> None:
 
     with open(args.dataset) as f:
         dataset: list[dict] = json.load(f)
+    if args.max_examples is not None:
+        if args.max_examples <= args.warmup:
+            raise ValueError("--max-examples must be greater than --warmup")
+        dataset = dataset[: args.max_examples]
+    if not dataset:
+        raise ValueError("Dataset contains no examples after applying --max-examples")
     print(f"[data] Loaded {len(dataset)} examples from {args.dataset.name}\n")
 
     session = load_session(
@@ -400,6 +418,7 @@ def main() -> None:
         "n_dataset_examples": len(dataset),
         "n_measured_examples": len(per_example),
         "warmup_examples": args.warmup,
+        "benchmark_scope": args.benchmark_scope,
         "timestamp_utc": datetime.now(UTC).isoformat(),
         "os": platform.system(),
         "python_version": sys.version,
