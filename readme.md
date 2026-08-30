@@ -49,12 +49,12 @@ Artifact targets:
 - TensorRT-LLM path for Jetson Orin-or-newer and supported cloud GPUs
 - vLLM where a suitable GPU-backed environment is available
 
-## Manifest Dry Run
+## Manifest Pipeline
 
-The first pipeline phase is implemented as a no-side-effect resolver. It
+The pipeline resolves version manifests without side effects by default. It
 validates a version manifest and prints the exact selected models, required
 artifacts, supported engine variants, cache modes, and dataset inputs. It does
-not download, merge, build, evaluate, or plot yet.
+not download, merge, build, evaluate, or plot:
 
 ```bash
 python scripts/prepare_benchmark_splits.py --dataset-size 10k
@@ -68,6 +68,24 @@ python -m benchmark_pipeline \
 
 Use exact manifest names for a subset, for example
 `--models Qwen3-0.6B SmolLM2-360M`. Add `--json` for machine-readable output.
+
+Phase 2 can fetch the pinned base-model and adapter snapshots, then merge the
+adapter locally. This is deliberately opt-in because it downloads model
+weights. It writes only to the versioned `models/` layout and refuses to reuse
+a directory whose provenance does not match the manifest.
+
+```bash
+python -m benchmark_pipeline \
+  --manifest manifests/v2.1.json \
+  --target rpi --compute cpu \
+  --models Qwen3-0.6B \
+  --stages fetch merge \
+  --execute
+```
+
+Set `HF_TOKEN` (or `HUGGINGFACE_TOKEN`) before selecting gated models such as
+Llama. `--execute` currently supports `fetch` and `merge` only; artifact
+building, evaluation, and plotting remain later phases.
 
 ## Core Question
 

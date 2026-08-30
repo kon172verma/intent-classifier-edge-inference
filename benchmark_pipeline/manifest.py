@@ -103,6 +103,15 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         names.add(name)
         _require_string(model.get("slug"), f"models[{index}].slug")
         _require_string(model.get("base_model_id"), f"models[{index}].base_model_id")
+        base_model_revision = _require_string(
+            model.get("base_model_revision"), f"models[{index}].base_model_revision"
+        )
+        if len(base_model_revision) != 40 or any(
+            char not in "0123456789abcdef" for char in base_model_revision
+        ):
+            raise ManifestError(
+                f"models[{index}].base_model_revision must be a 40-character lowercase Git SHA"
+            )
         adapter = _require_mapping(model.get("adapter"), f"models[{index}].adapter")
         subfolder = _require_string(adapter.get("subfolder"), f"models[{index}].adapter.subfolder")
         if not subfolder.startswith(f"{version}/"):
@@ -263,6 +272,7 @@ def resolve_plan(
                 "name": model["name"],
                 "slug": model["slug"],
                 "base_model_id": model["base_model_id"],
+                "base_model_revision": model["base_model_revision"],
                 "adapter": model["adapter"],
                 "source_paths": {
                     "base": _repo_relative(model_root / "source" / "base", repo_root),

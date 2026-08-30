@@ -4,35 +4,37 @@ Release workflow for intent-classifier-inference.
 
 ## Responsibilities
 
-- `merge_models.py`: download base model + adapter and write merged checkpoints to local `models/`.
+- `merge_models.py`: compatibility CLI for the manifest-driven source download and merge flow.
 - `release.py`: upload already-prepared local artifacts (safetensors/gguf/onnx) and tag release.
 - `upload_release.py`: upload a model folder from local `intent-classifier-release` clone.
 
-## Expected Local Model Layout
+## Manifest-Driven Model Layout
 
-For each run:
+`merge_models.py` writes the standard, version-scoped layout:
 
-`models/<model_key>_<technique>_<config>_<dataset_size>_merged/`
+```text
+models/<version>/<model-name>/
+  source/base/
+  source/adapter/
+  transformers/merged/
+```
 
-- `safetensors/`
-- `gguf/` (optional)
-- `onnx/` (optional)
-
-Example:
-
-`models/qwen3-0.6b_LoRA_C_1k_merged/safetensors/`
+GGUF and ONNX artifact builders will add sibling directories beneath the same
+model root in the next pipeline phase. The older release uploader still uses
+the legacy release layout and is not invoked by `merge_models.py`.
 
 ## Commands
 
 1. Merge adapters into local safetensors:
 
 ```bash
-python release_scripts/merge_models.py --technique LoRA --runs qwen3-0.6b_C_1k llama3.2-1b_C_1k
+python release_scripts/merge_models.py --manifest manifests/v1.0.json --models all
 ```
 
-2. Prepare `gguf/` and `onnx/` under each `<run>_merged` folder (if needed).
+2. Build GGUF and ONNX artifacts through the benchmark pipeline once Phase 3
+   is implemented.
 
-3. Upload release artifacts and tag:
+3. The legacy release uploader may still upload its existing release layout:
 
 ```bash
 python release_scripts/release.py --version v1.0 --runs qwen3-0.6b_LoRA_C_1k llama3.2-1b_LoRA_C_1k

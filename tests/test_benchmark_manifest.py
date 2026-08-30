@@ -43,6 +43,9 @@ class BenchmarkManifestTests(unittest.TestCase):
             ["transformers", "llama_cpp", "onnx_runtime"],
         )
         self.assertEqual(plan["models"][0]["engines"][0]["cache_modes"], ["prefix_cache"])
+        self.assertEqual(
+            plan["models"][0]["base_model_revision"], "2b01de6d1108f9b2b5e46a726aa678a359b6c03b"
+        )
 
     def test_explicit_model_and_engine_selection(self) -> None:
         manifest = load_manifest(MANIFESTS_DIR / "v2.0.json")

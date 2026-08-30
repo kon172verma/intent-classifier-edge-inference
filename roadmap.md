@@ -2,10 +2,12 @@
 
 ## Status
 
-Phase 1 is implemented: version manifests, validation, profile resolution, and
-the no-side-effect `python -m benchmark_pipeline` dry-run command. Artifact
-acquisition, merging, building, evaluation, and plotting remain unimplemented.
-`AGENTS.md` defines the standards that subsequent implementation must follow.
+Phases 1 and 2 are implemented. The command remains a no-side-effect dry run
+unless `--execute` is supplied. Phase 2 supports `--stages fetch merge`: it
+downloads manifest-pinned base and adapter snapshots, records checksums and
+provenance, and merges adapters locally into the agreed layout. Artifact
+builders, evaluation, and plotting remain unimplemented. `AGENTS.md` defines
+the standards that subsequent implementation must follow.
 
 ## Objective
 
@@ -179,7 +181,7 @@ useful baseline evidence and may be Git-tracked. The cleanup sequence is:
 Deleting the old outputs is therefore appropriate later, but not before the
 new pipeline has produced an auditable replacement.
 
-## Implementation phases (not started)
+## Implementation phases
 
 1. **Manifest and planning layer**
    - [x] Add the three version manifests and schema validation.
@@ -187,10 +189,14 @@ new pipeline has produced an auditable replacement.
    - [x] Implement dry-run profile resolution and dependency plan output.
 
 2. **Artifact acquisition and merge**
-   - Refactor the existing merge helper to accept explicit manifest model
-     specifications instead of hard-coded Qwen3/Llama3 run keys.
-   - Add Qwen2.5 and SmolLM2 base-model support.
-   - Materialize source snapshots and merged checkpoints in the agreed layout.
+   - [x] Add manifest-pinned base-model revisions, including Qwen2.5 and
+     SmolLM2 support.
+   - [x] Materialize immutable, checksummed base and adapter source snapshots
+     in the agreed layout.
+   - [x] Merge locally snapshotted adapters through the manifest-driven
+     pipeline entry point and record builder/input provenance.
+   - [x] Refactor `release_scripts/merge_models.py` into a manifest-driven
+     compatibility entry point; it now shares the pipeline merge implementation.
 
 3. **Artifact builders**
    - Create a GGUF build entry point from the current documented commands.

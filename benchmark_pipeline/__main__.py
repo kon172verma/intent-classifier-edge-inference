@@ -1,14 +1,21 @@
-"""Resolve a manifest-driven benchmark plan without downloading or executing work."""
+"""Resolve or explicitly execute supported stages of the benchmark pipeline."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
-from benchmark_pipeline.manifest import ManifestError, load_manifest, resolve_plan
+from benchmark_pipeline.artifacts import ArtifactError, fetch_sources, merge_models
+from benchmark_pipeline.manifest import (
+    ManifestError,
+    load_manifest,
+    resolve_plan,
+    select_models,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -46,6 +53,11 @@ def parse_args() -> argparse.Namespace:
         help="fetch, merge, build-artifacts, evaluate, plot, or the sole value 'all'.",
     )
     parser.add_argument("--json", action="store_true", help="Emit the resolved plan as JSON.")
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Execute supported selected stages. Without this flag, the command is a dry run.",
+    )
     return parser.parse_args()
 
 
@@ -66,7 +78,9 @@ def print_plan(plan: dict[str, Any]) -> None:
     print(f"  final selection  {datasets['final_selection_test']}")
 
     for model in plan["models"]:
-        print(f"\nModel: {model['name']} ({model['base_model_id']})")
+        print(
+            f"\nModel: {model['name']} ({model['base_model_id']} @ {model['base_model_revision']})"
+        )
         print(f"  adapter: {model['adapter']['subfolder']}")
         print(f"  merged:  {model['source_paths']['merged']}")
         for engine in model["engines"]:
@@ -77,6 +91,42 @@ def print_plan(plan: dict[str, Any]) -> None:
             )
             for artifact_path in engine["artifact_paths"]:
                 print(f"    artifact: {artifact_path}")
+
+
+def _read_hf_token() -> str | None:
+    """Use a token when configured; public snapshots do not require one."""
+    return (
+        os.getenv("HF_TOKEN")
+        or os.getenv("HUGGINGFACE_TOKEN")
+        or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+    )
+
+
+def execute_phase_two(
+    *, manifest: dict[str, Any], requested_models: list[str], stages: list[str]
+) -> dict[str, Any]:
+    """Execute the acquisition and merge stages introduced in Phase 2."""
+    unsupported = [stage for stage in stages if stage not in {"fetch", "merge"}]
+    if unsupported:
+        names = ", ".join(unsupported)
+        raise ArtifactError(
+            f"Execution is not implemented yet for stage(s): {names}. "
+            "Phase 2 supports --stages fetch merge."
+        )
+
+    models = select_models(manifest, requested_models)
+    token = _read_hf_token()
+    execution: dict[str, Any] = {"stages": stages, "models": [model["name"] for model in models]}
+    if "fetch" in stages:
+        execution["fetch"] = fetch_sources(
+            repo_root=REPO_ROOT,
+            manifest=manifest,
+            models=models,
+            token=token,
+        )
+    if "merge" in stages:
+        execution["merge"] = merge_models(repo_root=REPO_ROOT, manifest=manifest, models=models)
+    return execution
 
 
 def main() -> int:
@@ -96,10 +146,30 @@ def main() -> int:
         print(f"benchmark_pipeline: error: {exc}", file=sys.stderr)
         return 2
 
+    if not args.execute:
+        if args.json:
+            print(json.dumps(plan, indent=2))
+        else:
+            print_plan(plan)
+        return 0
+
+    try:
+        execution = execute_phase_two(
+            manifest=manifest,
+            requested_models=args.models,
+            stages=plan["stages"],
+        )
+    except (ArtifactError, ManifestError) as exc:
+        print(f"benchmark_pipeline: error: {exc}", file=sys.stderr)
+        return 2
+
     if args.json:
-        print(json.dumps(plan, indent=2))
+        print(json.dumps({"plan": plan, "execution": execution}, indent=2))
     else:
         print_plan(plan)
+        print("\n=== Phase 2 Execution ===")
+        for stage in execution["stages"]:
+            print(f"Completed: {stage}")
     return 0
 
 

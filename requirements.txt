@@ -1,4 +1,5 @@
 dotenv
+huggingface_hub
 peft
 transformers
 torch
