@@ -49,6 +49,7 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from evaluation_lib.compatibility import PromptSpec
 from evaluation_lib.config import DATASET_DEFAULT, MODEL_PATHS
 from evaluation_lib.prompt import build_full_prompt
 
@@ -64,24 +65,15 @@ RESOLVED_CALIBRATION_SAMPLES = 100
 def _render_calibration_prompt(
     tokenizer: Any,
     example: dict[str, Any],
-    system_prompt: str,
+    prompt_spec: PromptSpec,
 ) -> str:
-    """Render a calibration prompt without relying on the legacy global prompt."""
-    tool_lines = "\n".join(
-        f"- {tool['name']}: {tool['description']}" for tool in example["available_tools"]
+    """Render the same versioned prompt that the evaluator will benchmark."""
+    return build_full_prompt(
+        tokenizer,
+        example["user_request"],
+        example["available_tools"],
+        prompt_spec,
     )
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": f"Available tools:\n{tool_lines}\n\nUser request: {example['user_request']}",
-        },
-    ]
-    kwargs = {"tokenize": False, "add_generation_prompt": True}
-    try:
-        return tokenizer.apply_chat_template(messages, enable_thinking=False, **kwargs)
-    except TypeError:
-        return tokenizer.apply_chat_template(messages, **kwargs)
 
 
 class ResolvedPrefillCalibrationReader(CalibrationDataReader):
@@ -93,7 +85,7 @@ class ResolvedPrefillCalibrationReader(CalibrationDataReader):
         checkpoint_dir: Path,
         model_path: Path,
         calibration_data: Path,
-        system_prompt: str,
+        prompt_spec: PromptSpec,
         n_samples: int,
     ) -> None:
         from transformers import AutoTokenizer
@@ -105,7 +97,7 @@ class ResolvedPrefillCalibrationReader(CalibrationDataReader):
         if not isinstance(dataset, list) or not dataset:
             raise ValueError(f"Calibration data must be a non-empty JSON array: {calibration_data}")
         self._prompts = [
-            _render_calibration_prompt(self._tokenizer, example, system_prompt)
+            _render_calibration_prompt(self._tokenizer, example, prompt_spec)
             for example in dataset[:n_samples]
         ]
         self._past_specs = _past_kv_input_names(model_path)
@@ -328,7 +320,7 @@ def quantize_resolved_model(
     output_root: Path,
     variants: list[str],
     calibration_data: Path | None = None,
-    system_prompt: str | None = None,
+    prompt_spec: PromptSpec | None = None,
     n_calibration_samples: int = RESOLVED_CALIBRATION_SAMPLES,
 ) -> None:
     """Quantize an explicit manifest-resolved ONNX model into an empty output root."""
@@ -357,15 +349,15 @@ def quantize_resolved_model(
     if "static-int8" in variants:
         if calibration_data is None:
             raise ValueError("static-int8 requires calibration_data")
-        if system_prompt is None:
-            raise ValueError("static-int8 requires system_prompt")
+        if prompt_spec is None:
+            raise ValueError("static-int8 requires prompt_spec")
         static_output = output_root / "static-int8" / "model.onnx"
         static_output.parent.mkdir()
         reader = ResolvedPrefillCalibrationReader(
             checkpoint_dir=checkpoint_dir,
             model_path=fp32_model,
             calibration_data=cast(Path, calibration_data),
-            system_prompt=cast(str, system_prompt),
+            prompt_spec=prompt_spec,
             n_samples=n_calibration_samples,
         )
         quantize_static(

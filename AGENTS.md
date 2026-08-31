@@ -81,7 +81,9 @@ verification remains manual until those device environments are configured.
 ## Prompt and output compatibility
 
 - v1.0 uses the name-output format: the expected and emitted label is the
-  readable tool name, or `-` for no tool.
+  readable tool name, or `none` for no tool. Its `v1-tool-name` renderer must
+  preserve the fine-tuning format: `Available Tools`, `Name`, `Description`,
+  `User Request`, and the `Selected Tool:` completion cue.
 - v2.0 and v2.1 use positional-ID output: IDs are assigned from the displayed
   tool order (`a`-`z`, then `A`-`Z`); `-` means no tool.
 - Prompt text, prompt-template version, output format, and no-tool token must

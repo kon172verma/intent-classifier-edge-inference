@@ -20,6 +20,7 @@ from benchmark_pipeline.artifacts import (
     _write_metadata,
     model_root,
 )
+from evaluation_lib.compatibility import PromptSpec
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -34,8 +35,24 @@ def _merged_provenance(merged_dir: Path) -> dict[str, Any]:
     return metadata
 
 
-def _artifact_expected(kind: str, variant: str, merged: Mapping[str, Any]) -> dict[str, Any]:
-    return {"kind": kind, "variant": variant, "input": dict(merged)}
+def _artifact_expected(
+    kind: str,
+    variant: str,
+    merged: Mapping[str, Any],
+    prompt_spec: PromptSpec | None = None,
+) -> dict[str, Any]:
+    """Describe the inputs that determine whether an artifact is reusable."""
+    expected: dict[str, Any] = {"kind": kind, "variant": variant, "input": dict(merged)}
+    if kind == "onnx" and variant == "static-int8":
+        if prompt_spec is None:
+            raise ValueError("static-int8 artifact provenance requires a prompt specification")
+        expected["calibration_prompt"] = {
+            "template_id": prompt_spec.template_id,
+            "system_prompt": prompt_spec.system_prompt,
+            "output_format": prompt_spec.output_format,
+            "model_no_tool_token": prompt_spec.model_no_tool_token,
+        }
+    return expected
 
 
 def _write_artifact_metadata(
@@ -147,10 +164,10 @@ def _build_onnx(
     variants: list[str],
     merged: Mapping[str, Any],
     calibration_data: Path,
-    system_prompt: str,
+    prompt_spec: PromptSpec,
 ) -> list[dict[str, Any]]:
     expected_by_variant = {
-        variant: _artifact_expected("onnx", variant, merged) for variant in variants
+        variant: _artifact_expected("onnx", variant, merged, prompt_spec) for variant in variants
     }
     required = [
         variant
@@ -215,7 +232,7 @@ def _build_onnx(
                 output_root=staging / "quantized",
                 variants=quantized,
                 calibration_data=calibration_data if "static-int8" in quantized else None,
-                system_prompt=system_prompt if "static-int8" in quantized else None,
+                prompt_spec=prompt_spec if "static-int8" in quantized else None,
             )
 
         builder = {
@@ -294,7 +311,7 @@ def build_artifacts(
                     variants=variants_by_type["onnx"],
                     merged=merged,
                     calibration_data=calibration_data,
-                    system_prompt=str(manifest["prompt"]["system_prompt"]),
+                    prompt_spec=PromptSpec.from_manifest(dict(manifest["prompt"])),
                 )
             )
         results.append({"model": model["name"], "artifacts": artifacts})

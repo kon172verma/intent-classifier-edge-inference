@@ -10,8 +10,23 @@ from evaluation_lib.config import SYSTEM_PROMPT
 _DEFAULT_PROMPT_SPEC = legacy_prompt_spec(SYSTEM_PROMPT)
 
 
-def build_user_message(user_request: str, available_tools: list[dict]) -> str:
-    """Format the tool list and user request into a single user turn."""
+def _build_v1_tool_name_message(user_request: str, available_tools: list[dict]) -> str:
+    """Reproduce the v1.0 fine-tuning user turn exactly."""
+    tool_blocks = "\n\n".join(
+        f"Name: {tool['name']}\nDescription: {tool['description']}" for tool in available_tools
+    )
+    return f"Available Tools:\n{tool_blocks}\n\nUser Request:\n{user_request}\n\nSelected Tool:"
+
+
+def build_user_message(
+    user_request: str,
+    available_tools: list[dict],
+    prompt_spec: PromptSpec | None = None,
+) -> str:
+    """Format the version-specific tool list and user request into a user turn."""
+    if prompt_spec is not None and prompt_spec.template_id == "v1-tool-name":
+        return _build_v1_tool_name_message(user_request, available_tools)
+
     tool_lines = "\n".join(f"- {t['name']}: {t['description']}" for t in available_tools)
     return f"Available tools:\n{tool_lines}\n\nUser request: {user_request}"
 
@@ -39,7 +54,10 @@ def build_full_prompt(
     prompt_spec = prompt_spec or _DEFAULT_PROMPT_SPEC
     messages = [
         {"role": "system", "content": prompt_spec.system_prompt},
-        {"role": "user", "content": build_user_message(user_request, available_tools)},
+        {
+            "role": "user",
+            "content": build_user_message(user_request, available_tools, prompt_spec),
+        },
     ]
     return _apply_template(tokenizer, messages)
 

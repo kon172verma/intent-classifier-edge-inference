@@ -141,7 +141,7 @@ and output parser will become format-aware:
 
 | Manifest output format | Prompt target | Canonical value used for quality |
 | --- | --- | --- |
-| `tool_name` (v1.0) | readable tool name or `-` | tool name or no-tool |
+| `tool_name` (v1.0) | readable tool name or `none` | tool name or no-tool |
 | `positional_id` (v2.0/v2.1) | dynamic ID (`a`-`z`, `A`-`Z`) or `-` | ID decoded through that example's displayed tool list, then tool name or no-tool |
 
 Implementation will add a shared mapping module rather than a static mapping

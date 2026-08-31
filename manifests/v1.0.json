@@ -16,9 +16,9 @@
   },
   "prompt": {
     "template_id": "v1-tool-name",
-    "system_prompt": "You are a tool router.\n\nRules:\n- Return only the tool name.\n- Return '-' if no listed tool applies.\n- Do not explain.",
+    "system_prompt": "You are a tool router.\n\nRules:\n- Return only the tool name.\n- Return \"none\" if no tool matches.\n- Do not explain.",
     "output_format": "tool_name",
-    "model_no_tool_token": "-",
+    "model_no_tool_token": "none",
     "canonical_no_tool_value": "none"
   },
   "models": [

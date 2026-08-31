@@ -12,7 +12,7 @@ class OutputCompatibilityTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tools = [{"name": "call_handler"}, {"name": "nav_route_planner"}]
-        self.v1 = PromptSpec("route", "tool_name", "-", "none", "v1-tool-name")
+        self.v1 = PromptSpec("route", "tool_name", "none", "none", "v1-tool-name")
         self.v2 = PromptSpec("route", "positional_id", "-", "none", "v2-positional-id")
 
     def test_tool_name_output_preserves_the_readable_name(self) -> None:
