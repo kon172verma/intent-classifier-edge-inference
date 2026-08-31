@@ -16,7 +16,7 @@
   },
   "prompt": {
     "template_id": "v2-positional-id",
-    "system_prompt": "You are a tool router.\n\nRules:\n- Return only the selected tool ID.\n- Return '-' if no listed tool applies.\n- Do not explain.",
+    "system_prompt": "You are a tool router.\n\nAvailable tools are listed with id, name, and description.\n\nRules:\n- Return only the tool id.\n- Use the id from the available tools list.\n- Return \"-\" if no tool matches.\n- Do not explain.",
     "output_format": "positional_id",
     "model_no_tool_token": "-",
     "canonical_no_tool_value": "none",

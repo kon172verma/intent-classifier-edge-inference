@@ -63,13 +63,16 @@ class PromptTemplateTests(unittest.TestCase):
         )
         self.assertTrue(tokenizer.kwargs["add_generation_prompt"])
 
-    def test_v2_retains_the_compact_id_prompt_layout(self) -> None:
+    def test_v2_user_message_matches_the_positional_id_fine_tuning_layout(self) -> None:
         self.assertEqual(
             build_user_message("Take me downtown.", self.tools, self.v2),
-            "Available tools:\n"
-            "- nav_route_planner: Plans a driving route.\n"
-            "- climate_control: Adjusts cabin temperature.\n\n"
-            "User request: Take me downtown.",
+            "Available Tools:\n"
+            "ID | Name | Description\n"
+            "a | nav_route_planner | Plans a driving route.\n"
+            "b | climate_control | Adjusts cabin temperature.\n\n"
+            "User Request:\n"
+            "Take me downtown.\n\n"
+            "Selected Tool:",
         )
 
 

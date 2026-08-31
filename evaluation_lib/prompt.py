@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from evaluation_lib.compatibility import PromptSpec, legacy_prompt_spec
+from evaluation_lib.compatibility import PromptSpec, legacy_prompt_spec, positional_id_for_index
 from evaluation_lib.config import SYSTEM_PROMPT
 
 _DEFAULT_PROMPT_SPEC = legacy_prompt_spec(SYSTEM_PROMPT)
@@ -18,6 +18,21 @@ def _build_v1_tool_name_message(user_request: str, available_tools: list[dict]) 
     return f"Available Tools:\n{tool_blocks}\n\nUser Request:\n{user_request}\n\nSelected Tool:"
 
 
+def _build_v2_positional_id_message(user_request: str, available_tools: list[dict]) -> str:
+    """Reproduce the v2.x positional-ID fine-tuning user turn exactly."""
+    tool_rows = "\n".join(
+        f"{positional_id_for_index(index)} | {tool['name']} | {tool['description']}"
+        for index, tool in enumerate(available_tools)
+    )
+    return (
+        "Available Tools:\n"
+        "ID | Name | Description\n"
+        f"{tool_rows}\n\n"
+        f"User Request:\n{user_request}\n\n"
+        "Selected Tool:"
+    )
+
+
 def build_user_message(
     user_request: str,
     available_tools: list[dict],
@@ -26,6 +41,8 @@ def build_user_message(
     """Format the version-specific tool list and user request into a user turn."""
     if prompt_spec is not None and prompt_spec.template_id == "v1-tool-name":
         return _build_v1_tool_name_message(user_request, available_tools)
+    if prompt_spec is not None and prompt_spec.template_id == "v2-positional-id":
+        return _build_v2_positional_id_message(user_request, available_tools)
 
     tool_lines = "\n".join(f"- {t['name']}: {t['description']}" for t in available_tools)
     return f"Available tools:\n{tool_lines}\n\nUser request: {user_request}"

@@ -85,7 +85,10 @@ verification remains manual until those device environments are configured.
   preserve the fine-tuning format: `Available Tools`, `Name`, `Description`,
   `User Request`, and the `Selected Tool:` completion cue.
 - v2.0 and v2.1 use positional-ID output: IDs are assigned from the displayed
-  tool order (`a`-`z`, then `A`-`Z`); `-` means no tool.
+  tool order (`a`-`z`, then `A`-`Z`); `-` means no tool. Their
+  `v2-positional-id` renderer must preserve the fine-tuning format: an
+  `Available Tools` table with `ID | Name | Description`, followed by
+  `User Request` and the `Selected Tool:` completion cue.
 - Prompt text, prompt-template version, output format, and no-tool token must
   be declared in the version manifest. A separate prompt file is allowed only
   when the manifest pins its path and content SHA-256.
