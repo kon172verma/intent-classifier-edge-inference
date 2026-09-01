@@ -89,9 +89,13 @@ class BenchmarkManifestTests(unittest.TestCase):
 
     def test_download_release_requires_a_pinned_release_and_is_exclusive(self) -> None:
         manifest = load_manifest(MANIFESTS_DIR / "v1.0.json")
+        unpublished = copy.deepcopy(manifest)
+        unpublished.pop("release")
+        for model in unpublished["models"]:
+            model.pop("release_subfolder")
         with self.assertRaisesRegex(ManifestError, "requires a pinned release"):
             resolve_plan(
-                manifest,
+                unpublished,
                 target="rpi",
                 compute="cpu",
                 requested_models=["Qwen3-0.6B"],
@@ -100,13 +104,9 @@ class BenchmarkManifestTests(unittest.TestCase):
                 repo_root=REPO_ROOT,
             )
 
-        released = copy.deepcopy(manifest)
-        released["release"] = {"repository": "owner/release", "revision": "a" * 40}
-        for model in released["models"]:
-            model["release_subfolder"] = f"{released['version']}-{model['slug']}"
-        validate_manifest(released)
+        validate_manifest(manifest)
         plan = resolve_plan(
-            released,
+            manifest,
             target="rpi",
             compute="cpu",
             requested_models=["Qwen3-0.6B"],
@@ -119,7 +119,7 @@ class BenchmarkManifestTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ManifestError, "alternative"):
             resolve_plan(
-                released,
+                manifest,
                 target="rpi",
                 compute="cpu",
                 requested_models=["Qwen3-0.6B"],
