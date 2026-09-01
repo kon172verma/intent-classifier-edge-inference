@@ -40,6 +40,12 @@ loaded from `.env` when present:
 python release_scripts/release.py --version v1.0 --models all --execute
 ```
 
+The final line prints the immutable commit SHA containing the completed upload.
+Copy that SHA into the version manifest's `release.revision`, then add each
+model's `release_subfolder` (for example `v1.0-qwen3-0.6b`). Devices can then
+use the benchmark pipeline's `download-release` stage without rebuilding the
+artifacts locally.
+
 Use `--private` only when creating a new private repository. To target a
 different single repository, use `--repo-id`:
 

@@ -243,7 +243,7 @@ def _upload_release(
     manifest: Mapping[str, Any],
     model: Mapping[str, Any],
     plan: Mapping[str, Any],
-) -> None:
+) -> str:
     """Upload local artifact folders directly, without duplicating large weights."""
     repo_id = str(plan["repo_id"])
     artifact_paths = plan["artifact_paths"]
@@ -251,8 +251,9 @@ def _upload_release(
     model_folder = str(plan["model_folder"])
     ignore_patterns = [_ARTIFACT_METADATA_NAME, f"**/{_ARTIFACT_METADATA_NAME}"]
 
+    latest_commit: Any = None
     for artifact_type, artifact_path in artifact_paths.items():
-        api.upload_folder(
+        latest_commit = api.upload_folder(
             repo_id=repo_id,
             repo_type="model",
             folder_path=str(artifact_path),
@@ -268,7 +269,7 @@ def _upload_release(
         model_folder=model_folder,
         local_model_root=local_model_root,
     )
-    api.upload_file(
+    latest_commit = api.upload_file(
         repo_id=repo_id,
         repo_type="model",
         path_in_repo=f"{model_folder}/README.md",
@@ -277,13 +278,17 @@ def _upload_release(
         ).encode(),
         commit_message=f"Document {manifest['version']} {model['name']} release",
     )
-    api.upload_file(
+    latest_commit = api.upload_file(
         repo_id=repo_id,
         repo_type="model",
         path_in_repo=f"{model_folder}/benchmark_provenance.json",
         path_or_fileobj=(json.dumps(provenance, indent=2, sort_keys=True) + "\n").encode(),
         commit_message=f"Add {manifest['version']} {model['name']} provenance",
     )
+    revision = getattr(latest_commit, "oid", None)
+    if not isinstance(revision, str) or len(revision) != 40:
+        raise ReleaseError("Hugging Face did not return an immutable commit SHA for the upload")
+    return revision
 
 
 def _parse_args() -> argparse.Namespace:
@@ -365,14 +370,17 @@ def main() -> int:
 
     api = HfApi(token=token)
     api.create_repo(repo_id=args.repo_id, repo_type="model", private=args.private, exist_ok=True)
+    release_revision: str | None = None
     for model, plan in zip(models, plans, strict=True):
-        _upload_release(
+        release_revision = _upload_release(
             api=api,
             manifest=manifest,
             model=model,
             plan=plan,
         )
         print(f"[uploaded] https://huggingface.co/{args.repo_id}/tree/main/{plan['model_folder']}")
+    assert release_revision is not None
+    print(f"[pinned release revision] {release_revision}")
     return 0
 
 

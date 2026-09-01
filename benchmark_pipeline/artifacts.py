@@ -230,6 +230,266 @@ def fetch_sources(
     ]
 
 
+def _release_configuration(
+    manifest: Mapping[str, Any], model: Mapping[str, Any]
+) -> tuple[str, str, str]:
+    """Return the pinned Hub location for one published model folder."""
+    release = manifest.get("release")
+    if not isinstance(release, Mapping):
+        raise ArtifactError("download-release requires a release section in the manifest")
+    repository = release.get("repository")
+    revision = release.get("revision")
+    subfolder = model.get("release_subfolder")
+    if not all(isinstance(value, str) and value for value in (repository, revision, subfolder)):
+        raise ArtifactError(
+            "download-release requires release.repository, release.revision, and "
+            "model.release_subfolder"
+        )
+    _validate_subfolder(cast(str, subfolder))
+    return cast(str, repository), cast(str, revision), cast(str, subfolder)
+
+
+def _release_artifact_specs(
+    *, root: Path, release_subfolder: str, engines: Iterable[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Resolve the local and remote directories needed by selected engines.
+
+    ONNX Runtime currently loads its tokenizer from the merged Transformers
+    directory, so an ONNX profile also downloads the published Transformers
+    checkpoint. This keeps the current evaluator paths unchanged.
+    """
+    requested: list[tuple[str, str]] = []
+    for engine in engines:
+        artifact = engine["artifact"]
+        artifact_type = str(artifact["type"])
+        for variant in artifact["variants"]:
+            key = (artifact_type, str(variant))
+            if key not in requested:
+                requested.append(key)
+        if artifact_type == "onnx" and ("transformers", "merged") not in requested:
+            requested.append(("transformers", "merged"))
+
+    specs: list[dict[str, Any]] = []
+    for artifact_type, variant in requested:
+        if artifact_type == "transformers":
+            remote_directory = f"{release_subfolder}/transformers"
+            local_directory = root / "transformers" / "merged"
+        else:
+            remote_directory = f"{release_subfolder}/{artifact_type}/{variant}"
+            local_directory = root / artifact_type / variant
+        specs.append(
+            {
+                "artifact_type": artifact_type,
+                "variant": variant,
+                "remote_directory": remote_directory,
+                "local_directory": local_directory,
+            }
+        )
+    return specs
+
+
+def _release_download_expected(
+    *, repository: str, revision: str, release_subfolder: str, spec: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        "kind": "release_download",
+        "repository": repository,
+        "revision": revision,
+        "release_subfolder": release_subfolder,
+        "artifact_type": spec["artifact_type"],
+        "variant": spec["variant"],
+        "remote_directory": spec["remote_directory"],
+    }
+
+
+def _validate_release_provenance(
+    *,
+    provenance: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    model: Mapping[str, Any],
+    repository: str,
+    release_subfolder: str,
+) -> None:
+    """Ensure a downloaded release folder was built for this exact manifest model."""
+    if provenance.get("release_repository") != repository:
+        raise ArtifactError("Release provenance repository does not match the manifest")
+    if provenance.get("release_subfolder") != release_subfolder:
+        raise ArtifactError("Release provenance subfolder does not match the manifest")
+
+    remote_manifest = provenance.get("manifest")
+    if not isinstance(remote_manifest, Mapping):
+        raise ArtifactError("Release provenance is missing its manifest record")
+    expected_manifest = {
+        "version": manifest["version"],
+        "experiments": manifest["experiments"],
+        "dataset": manifest["dataset"],
+        "prompt": manifest["prompt"],
+    }
+    if dict(remote_manifest) != expected_manifest:
+        raise ArtifactError("Release provenance manifest does not match the requested manifest")
+
+    remote_model = provenance.get("model")
+    if not isinstance(remote_model, Mapping):
+        raise ArtifactError("Release provenance is missing its model record")
+    for key in ("name", "slug", "base_model_id", "base_model_revision", "adapter"):
+        if remote_model.get(key) != model.get(key):
+            raise ArtifactError(
+                f"Release provenance model field does not match the manifest: {key}"
+            )
+
+
+def download_model_release_artifacts(
+    *,
+    repo_root: Path,
+    manifest: Mapping[str, Any],
+    model: Mapping[str, Any],
+    engines: Iterable[Mapping[str, Any]],
+    token: str | None = None,
+    snapshot_download_fn: SnapshotDownload | None = None,
+) -> dict[str, Any]:
+    """Download profile-required release artifacts into the standard local layout."""
+    repository, revision, release_subfolder = _release_configuration(manifest, model)
+    root = model_root(repo_root, manifest, model)
+    specs = _release_artifact_specs(root=root, release_subfolder=release_subfolder, engines=engines)
+    expected_by_spec = {
+        (str(spec["artifact_type"]), str(spec["variant"])): _release_download_expected(
+            repository=repository,
+            revision=revision,
+            release_subfolder=release_subfolder,
+            spec=spec,
+        )
+        for spec in specs
+    }
+    pending = [
+        spec
+        for spec in specs
+        if not _require_reusable(
+            Path(spec["local_directory"]),
+            _ARTIFACT_METADATA_NAME,
+            expected_by_spec[(str(spec["artifact_type"]), str(spec["variant"]))],
+        )
+    ]
+    if not pending:
+        return {
+            "model": model["name"],
+            "repository": repository,
+            "revision": revision,
+            "release_subfolder": release_subfolder,
+            "artifacts": [
+                {"type": spec["artifact_type"], "variant": spec["variant"], "created": False}
+                for spec in specs
+            ],
+        }
+
+    downloader = snapshot_download_fn or _default_snapshot_download
+    root.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="benchmark-release-", dir=root.parent) as temp_dir:
+        staging_root = Path(temp_dir)
+        allow_patterns = [f"{release_subfolder}/benchmark_provenance.json"] + [
+            f"{spec['remote_directory']}/**" for spec in pending
+        ]
+        try:
+            snapshot_path = Path(
+                downloader(
+                    repo_id=repository,
+                    revision=revision,
+                    cache_dir=staging_root / "hf-cache",
+                    token=token,
+                    allow_patterns=allow_patterns,
+                )
+            )
+        except ArtifactError:
+            raise
+        except Exception as exc:
+            raise ArtifactError(
+                f"Unable to download release {repository}@{revision}. "
+                "Check network access, the pinned revision, and HF_TOKEN if required."
+            ) from exc
+
+        release_root = snapshot_path / _validate_subfolder(release_subfolder)
+        provenance_path = release_root / "benchmark_provenance.json"
+        provenance = _read_metadata(provenance_path)
+        if provenance is None:
+            raise ArtifactError(
+                f"Release {repository}@{revision} does not contain {release_subfolder}/"
+                "benchmark_provenance.json"
+            )
+        _validate_release_provenance(
+            provenance=provenance,
+            manifest=manifest,
+            model=model,
+            repository=repository,
+            release_subfolder=release_subfolder,
+        )
+        provenance_sha256 = _file_sha256(provenance_path)
+
+        staged_artifacts: list[tuple[dict[str, Any], Path]] = []
+        for spec in pending:
+            remote_directory = snapshot_path / _validate_subfolder(str(spec["remote_directory"]))
+            if not remote_directory.is_dir():
+                raise ArtifactError(
+                    f"Release {repository}@{revision} does not contain required artifact: "
+                    f"{spec['remote_directory']}"
+                )
+            staged_directory = (
+                staging_root / "artifacts" / str(spec["artifact_type"]) / str(spec["variant"])
+            )
+            staged_directory.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(remote_directory, staged_directory)
+            metadata = {
+                **expected_by_spec[(str(spec["artifact_type"]), str(spec["variant"]))],
+                "created_at": _utc_now(),
+                "release_provenance_sha256": provenance_sha256,
+                "files": _file_inventory(staged_directory),
+            }
+            _write_metadata(staged_directory / _ARTIFACT_METADATA_NAME, metadata)
+            staged_artifacts.append((spec, staged_directory))
+
+        for spec, staged_directory in staged_artifacts:
+            destination = Path(spec["local_directory"])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            staged_directory.replace(destination)
+
+    return {
+        "model": model["name"],
+        "repository": repository,
+        "revision": revision,
+        "release_subfolder": release_subfolder,
+        "artifacts": [
+            {
+                "type": spec["artifact_type"],
+                "variant": spec["variant"],
+                "created": spec in pending,
+            }
+            for spec in specs
+        ],
+    }
+
+
+def download_release_artifacts(
+    *,
+    repo_root: Path,
+    manifest: Mapping[str, Any],
+    models: Iterable[Mapping[str, Any]],
+    engines: Iterable[Mapping[str, Any]],
+    token: str | None = None,
+    snapshot_download_fn: SnapshotDownload | None = None,
+) -> list[dict[str, Any]]:
+    """Download release artifacts for all selected models and profile engines."""
+    engine_list = list(engines)
+    return [
+        download_model_release_artifacts(
+            repo_root=repo_root,
+            manifest=manifest,
+            model=model,
+            engines=engine_list,
+            token=token,
+            snapshot_download_fn=snapshot_download_fn,
+        )
+        for model in models
+    ]
+
+
 def _source_provenance(path: Path) -> dict[str, Any]:
     metadata = _read_metadata(path / _SOURCE_METADATA_NAME)
     if metadata is None:

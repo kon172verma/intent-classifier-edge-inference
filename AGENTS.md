@@ -48,6 +48,21 @@ TensorRT-LLM is not a Xavier pipeline artifact. Keep it out of the Jetson
 Xavier profiles until bare TensorRT has a separately designed builder and
 evaluator integration.
 
+## Release artifact downloads
+
+- `download-release` is an explicit alternative to `fetch`, `merge`, and
+  `build-artifacts`. Do not schedule those acquisition paths together.
+- A manifest may gain a `release` object only after that release is published:
+  it must pin the single Hub repository and an immutable 40-character commit
+  SHA. Each model must then declare its exact `release_subfolder`.
+- The release-download stage writes deployable files back into the standard
+  local `models/<version>/<model-name>/` layout and records release provenance
+  in `.benchmark_artifact.json`. Reuse is allowed only for the same repository,
+  commit SHA, subfolder, artifact type, and variant.
+- Resolve release downloads from selected profile engines. Download the full
+  merged Transformers folder whenever Transformers or ONNX Runtime is selected;
+  the current ONNX evaluator uses it for tokenizer loading.
+
 ## Report and chart layout
 
 Direct, engine-specific commands write to their engine folder:

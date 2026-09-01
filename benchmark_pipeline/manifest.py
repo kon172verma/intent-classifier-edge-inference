@@ -11,7 +11,8 @@ class ManifestError(ValueError):
     """Raised when a benchmark manifest is invalid or cannot be resolved."""
 
 
-_STAGES = ("fetch", "merge", "build-artifacts", "evaluate", "plot")
+_STAGES = ("fetch", "merge", "build-artifacts", "download-release", "evaluate", "plot")
+_DEFAULT_STAGES = ("fetch", "merge", "build-artifacts", "evaluate", "plot")
 _OUTPUT_FORMATS = frozenset({"tool_name", "positional_id"})
 _ARTIFACT_TYPES = frozenset({"transformers", "gguf", "onnx", "tensorrt"})
 
@@ -64,6 +65,16 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     if len(revision) != 40 or any(char not in "0123456789abcdef" for char in revision):
         raise ManifestError("experiments.revision must be a 40-character lowercase Git SHA")
 
+    release: dict[str, Any] | None = None
+    if "release" in manifest:
+        release = _require_mapping(manifest.get("release"), "release")
+        _require_string(release.get("repository"), "release.repository")
+        release_revision = _require_string(release.get("revision"), "release.revision")
+        if len(release_revision) != 40 or any(
+            char not in "0123456789abcdef" for char in release_revision
+        ):
+            raise ManifestError("release.revision must be a 40-character lowercase Git SHA")
+
     dataset = _require_mapping(manifest.get("dataset"), "dataset")
     if dataset.get("size") not in {"1k", "10k"}:
         raise ManifestError("dataset.size must be '1k' or '10k'")
@@ -102,6 +113,14 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
             raise ManifestError(f"models contains duplicate name: {name}")
         names.add(name)
         _require_string(model.get("slug"), f"models[{index}].slug")
+        if release is not None:
+            release_subfolder = _require_string(
+                model.get("release_subfolder"), f"models[{index}].release_subfolder"
+            )
+            if release_subfolder.startswith("/") or ".." in Path(release_subfolder).parts:
+                raise ManifestError(
+                    f"models[{index}].release_subfolder must be a safe relative path"
+                )
         _require_string(model.get("base_model_id"), f"models[{index}].base_model_id")
         base_model_revision = _require_string(
             model.get("base_model_revision"), f"models[{index}].base_model_revision"
@@ -214,13 +233,19 @@ def select_engines(
 def expand_stages(requested_stages: list[str]) -> list[str]:
     """Expand 'all' and validate the ordered set of requested pipeline stages."""
     if not requested_stages or requested_stages == ["all"]:
-        return list(_STAGES)
+        return list(_DEFAULT_STAGES)
     if "all" in requested_stages:
         raise ManifestError("--stages all cannot be combined with named stages")
     unknown = [stage for stage in requested_stages if stage not in _STAGES]
     if unknown:
         raise ManifestError(f"Unknown stage(s): {', '.join(unknown)}")
-    return [stage for stage in _STAGES if stage in requested_stages]
+    stages = [stage for stage in _STAGES if stage in requested_stages]
+    if "download-release" in stages and set(stages) & {"fetch", "merge", "build-artifacts"}:
+        raise ManifestError(
+            "download-release is an alternative to fetch, merge, and build-artifacts; "
+            "do not select them together"
+        )
+    return stages
 
 
 def _repo_relative(path: Path, repo_root: Path) -> str:
@@ -245,6 +270,10 @@ def resolve_plan(
     models = select_models(manifest, requested_models)
     engines = select_engines(profile, requested_engines)
     stages = expand_stages(requested_stages)
+    if "download-release" in stages and not isinstance(manifest.get("release"), dict):
+        raise ManifestError(
+            "download-release requires a pinned release.repository and release.revision in the manifest"
+        )
     split_root = repo_root / manifest["dataset"]["split_root"]
     dataset = manifest["dataset"]
 
@@ -274,6 +303,7 @@ def resolve_plan(
                 "base_model_id": model["base_model_id"],
                 "base_model_revision": model["base_model_revision"],
                 "adapter": model["adapter"],
+                "release_subfolder": model.get("release_subfolder"),
                 "source_paths": {
                     "base": _repo_relative(model_root / "source" / "base", repo_root),
                     "adapter": _repo_relative(model_root / "source" / "adapter", repo_root),
@@ -288,6 +318,7 @@ def resolve_plan(
             "version": manifest["version"],
             "experiments_repository": manifest["experiments"]["repository"],
             "experiments_revision": manifest["experiments"]["revision"],
+            "release": manifest.get("release"),
         },
         "profile": {"id": profile["id"], "target": target, "compute": compute},
         "stages": stages,

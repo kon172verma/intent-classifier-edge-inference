@@ -122,6 +122,31 @@ python -m benchmark_pipeline \
 TensorRT-LLM is excluded from the Jetson Xavier profile; bare TensorRT is a
 separate future integration.
 
+### Download published release artifacts
+
+For devices where merging and artifact construction are impractical, use the
+explicit `download-release` stage after the version has been published to the
+Hugging Face release repository. It is an alternative to `fetch`, `merge`, and
+`build-artifacts`, and it materializes the selected profile's release artifacts
+into the same local `models/<version>/<model-name>/` layout used by evaluators.
+
+The version manifest must first contain the release repository, its immutable
+40-character commit SHA, and each model's release subfolder. This keeps device
+downloads reproducible rather than resolving mutable `main`.
+
+```bash
+python -m benchmark_pipeline \
+  --manifest manifests/v1.0.json \
+  --target rpi --compute cpu \
+  --models all \
+  --stages download-release evaluate plot \
+  --execute
+```
+
+Only the requested profile artifacts are downloaded. ONNX Runtime also causes
+the merged Transformers folder to be downloaded because the current ONNX
+evaluator loads its tokenizer from that directory.
+
 ### Mac runtime smoke checks
 
 After the relevant artifacts have been fetched, merged, and built, run the

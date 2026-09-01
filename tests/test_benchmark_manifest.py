@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import copy
 import unittest
 from pathlib import Path
 
-from benchmark_pipeline.manifest import ManifestError, load_manifest, resolve_plan
+from benchmark_pipeline.manifest import (
+    ManifestError,
+    load_manifest,
+    resolve_plan,
+    validate_manifest,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFESTS_DIR = REPO_ROOT / "manifests"
@@ -80,6 +86,47 @@ class BenchmarkManifestTests(unittest.TestCase):
         manifest = load_manifest(MANIFESTS_DIR / "v2.1.json")
         profile = next(profile for profile in manifest["profiles"] if profile["id"] == "jetson-gpu")
         self.assertNotIn("tensorrt", [engine["name"] for engine in profile["engines"]])
+
+    def test_download_release_requires_a_pinned_release_and_is_exclusive(self) -> None:
+        manifest = load_manifest(MANIFESTS_DIR / "v1.0.json")
+        with self.assertRaisesRegex(ManifestError, "requires a pinned release"):
+            resolve_plan(
+                manifest,
+                target="rpi",
+                compute="cpu",
+                requested_models=["Qwen3-0.6B"],
+                requested_engines=["all"],
+                requested_stages=["download-release", "evaluate"],
+                repo_root=REPO_ROOT,
+            )
+
+        released = copy.deepcopy(manifest)
+        released["release"] = {"repository": "owner/release", "revision": "a" * 40}
+        for model in released["models"]:
+            model["release_subfolder"] = f"{released['version']}-{model['slug']}"
+        validate_manifest(released)
+        plan = resolve_plan(
+            released,
+            target="rpi",
+            compute="cpu",
+            requested_models=["Qwen3-0.6B"],
+            requested_engines=["all"],
+            requested_stages=["download-release", "evaluate", "plot"],
+            repo_root=REPO_ROOT,
+        )
+        self.assertEqual(plan["stages"], ["download-release", "evaluate", "plot"])
+        self.assertEqual(plan["models"][0]["release_subfolder"], "v1.0-qwen3-0.6b")
+
+        with self.assertRaisesRegex(ManifestError, "alternative"):
+            resolve_plan(
+                released,
+                target="rpi",
+                compute="cpu",
+                requested_models=["Qwen3-0.6B"],
+                requested_engines=["all"],
+                requested_stages=["fetch", "download-release"],
+                repo_root=REPO_ROOT,
+            )
 
 
 if __name__ == "__main__":

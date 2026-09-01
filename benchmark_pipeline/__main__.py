@@ -10,7 +10,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from benchmark_pipeline.artifacts import ArtifactError, fetch_sources, merge_models
+from benchmark_pipeline.artifacts import (
+    ArtifactError,
+    download_release_artifacts,
+    fetch_sources,
+    merge_models,
+)
 from benchmark_pipeline.builders import build_artifacts
 from benchmark_pipeline.manifest import (
     ManifestError,
@@ -73,7 +78,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=["all"],
         metavar="STAGE",
-        help="fetch, merge, build-artifacts, evaluate, plot, or the sole value 'all'.",
+        help="fetch, merge, build-artifacts, download-release, evaluate, plot, or the sole value 'all'.",
     )
     parser.add_argument("--json", action="store_true", help="Emit the resolved plan as JSON.")
     parser.add_argument(
@@ -95,6 +100,8 @@ def print_plan(plan: dict[str, Any]) -> None:
     print(f"Profile:  {profile['id']} ({profile['target']}/{profile['compute']})")
     print(f"Stages:   {', '.join(plan['stages'])}")
     print(f"Prompt:   {plan['prompt']['template_id']} ({plan['prompt']['output_format']})")
+    if manifest["release"] is not None:
+        print(f"Release:  {manifest['release']['repository']} @ {manifest['release']['revision']}")
     print("Datasets:")
     print(f"  evaluation       {datasets['test_anchor']}")
     print(f"  calibration      {datasets['calibration']}")
@@ -105,6 +112,8 @@ def print_plan(plan: dict[str, Any]) -> None:
             f"\nModel: {model['name']} ({model['base_model_id']} @ {model['base_model_revision']})"
         )
         print(f"  adapter: {model['adapter']['subfolder']}")
+        if model["release_subfolder"] is not None:
+            print(f"  release: {model['release_subfolder']}")
         print(f"  merged:  {model['source_paths']['merged']}")
         for engine in model["engines"]:
             print(
@@ -168,6 +177,14 @@ def execute_pipeline(
             calibration_data=REPO_ROOT
             / manifest["dataset"]["split_root"]
             / manifest["dataset"]["splits"]["calibration"],
+        )
+    if "download-release" in stages:
+        execution["download-release"] = download_release_artifacts(
+            repo_root=REPO_ROOT,
+            manifest=manifest,
+            models=models,
+            engines=engines,
+            token=token,
         )
     workspace: dict[str, Any] | None = None
     if "evaluate" in stages or "plot" in stages:

@@ -4,7 +4,7 @@
 
 Phases 1 through 5 are implemented. The command remains a no-side-effect dry
 run unless `--execute` is supplied. It supports `fetch`, `merge`,
-`build-artifacts`, `evaluate`, and `plot`; evaluation and plots are isolated
+`build-artifacts`, `download-release`, `evaluate`, and `plot`; evaluation and plots are isolated
 in a locked run workspace. `AGENTS.md` defines the standards that subsequent
 implementation must follow.
 
@@ -194,6 +194,10 @@ new pipeline has produced an auditable replacement.
      pipeline entry point and record builder/input provenance.
    - [x] Keep merging in the manifest-driven pipeline; release publication is
      intentionally separate from artifact construction.
+   - [x] Add an explicit `download-release` alternative for constrained devices:
+     profile-selected release artifacts are downloaded from a manifest-pinned
+     Hub commit into the standard local model layout, with remote provenance
+     validation and reuse protection.
 
 3. **Artifact builders**
    - [x] Create `scripts/build_gguf.py`, which accepts explicit merged paths
