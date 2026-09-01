@@ -75,6 +75,7 @@ from evaluation_lib.config import (
     SYSTEM_PROMPT,
     WARMUP_EXAMPLES,
 )
+from evaluation_lib.generation import normalize_token_ids
 from evaluation_lib.metrics import aggregate_metrics, compute_quality
 from evaluation_lib.prompt import (
     build_full_prompt,
@@ -273,8 +274,8 @@ def main() -> None:
     print(f"[model] ONNX file size: {weights_mb:.1f} MB ({args.precision} on {device})\n")
 
     text_tokenizer = load_text_tokenizer(tokenizer_path)
-    eos_token_ids: set[int] = set(
-        transformers.GenerationConfig.from_pretrained(str(tokenizer_path)).eos_token_id or []
+    eos_token_ids = normalize_token_ids(
+        transformers.GenerationConfig.from_pretrained(str(tokenizer_path)).eos_token_id
     )
     if text_tokenizer.eos_token_id is not None:
         eos_token_ids.add(text_tokenizer.eos_token_id)
