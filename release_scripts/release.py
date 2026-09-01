@@ -1,39 +1,25 @@
 #!/usr/bin/env python3
-"""
-release_scripts/release.py
-==========================
-Publish a version release from locally prepared artifacts.
+"""Publish version-scoped, deployable model artifacts to Hugging Face.
 
-Responsibilities of this script:
-- Upload local safetensors artifacts to HF_RELEASE_REPO.
-- Upload local gguf/onnx artifacts when present.
-- Create local git tags (and optional HF tags).
+Each selected manifest model receives its own Hub model repository. The merged
+Transformers checkpoint is published at the repository root while GGUF and
+ONNX artifacts remain in their format-specific subdirectories.
 
-This script does NOT merge adapters. Run merge_models.py first.
-
-Expected local layout per run:
-    models/<model_key>_<technique>_<config>_<dataset_size>_merged/
-        safetensors/
-        gguf/        (optional)
-        onnx/        (optional)
-
-Usage
------
-    # Upload models and create local git tag
-    python release_scripts/release.py --version v1.0 --runs \
-        qwen3-0.6b_LoRA_C_1k llama3.2-1b_LoRA_C_1k
-
-    # Only create a local git tag (skip upload)
-    python release_scripts/release.py --tag-only --version v1.0 --message "LoRA v1.0 release"
+Example:
+    python release_scripts/release.py --version v1.0 --models all --execute
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
-import subprocess
+import re
+import shutil
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from huggingface_hub import HfApi
 
@@ -41,180 +27,371 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from release_scripts.release_common import CURRENT_VERSION, HF_RELEASE_REPO, REPO_ROOT
+from benchmark_pipeline.artifacts import _ARTIFACT_METADATA_NAME, model_root
+from benchmark_pipeline.manifest import ManifestError, load_manifest, select_models
 
 
-def _parse_run(run: str) -> tuple[str, str, str, str]:
-    """Parse "{model_key}_{technique}_{config}_{dataset_size}"."""
-    parts = run.rsplit("_", 3)
-    if len(parts) != 4:
-        raise ValueError(
-            f"Cannot parse run '{run}'. Expected format: "
-            "<model_key>_<technique>_<config>_<dataset_size>, "
-            "e.g. 'qwen3-0.6b_LoRA_C_1k'."
-        )
-    model_key, technique, lora_config, dataset_size = parts
-    return model_key, technique, lora_config, dataset_size
+class ReleaseError(RuntimeError):
+    """Raised when local artifacts cannot be safely assembled for publication."""
 
 
-def _run_root(run: str, models_root: Path) -> Path:
-    model_key, technique, lora_config, dataset_size = _parse_run(run)
-    return models_root / f"{model_key}_{technique}_{lora_config}_{dataset_size}_merged"
+def _read_hf_token() -> str | None:
+    """Load an optional local .env and return a supported Hub token variable."""
+    env_file = _REPO_ROOT / ".env"
+    if env_file.is_file():
+        from dotenv import load_dotenv
+
+        load_dotenv(env_file)
+    return (
+        os.getenv("HF_TOKEN")
+        or os.getenv("HUGGINGFACE_TOKEN")
+        or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+    )
 
 
-def _upload_folder(
+def _model_size_label(model_name: str) -> str:
+    """Return the parameter-size suffix used in a release repository name."""
+    matches = re.findall(r"(\d+(?:\.\d+)?)([BM])", model_name, flags=re.IGNORECASE)
+    if not matches:
+        raise ReleaseError(f"Cannot derive a parameter-size label from model name: {model_name}")
+    number, unit = matches[-1]
+    return f"{number}{unit.lower()}"
+
+
+def release_repository_name(version: str, model_name: str) -> str:
+    """Return the simple, version-and-size scoped Hub repository name."""
+    return f"intent-classifier-{version}-{_model_size_label(model_name)}"
+
+
+def release_repository_id(owner: str, version: str, model_name: str) -> str:
+    """Return the fully qualified Hub repository ID for one release model."""
+    return f"{owner}/{release_repository_name(version, model_name)}"
+
+
+def _copy_directory(source: Path, destination: Path) -> None:
+    if not source.is_dir():
+        raise ReleaseError(f"Required artifact directory does not exist: {source}")
+    shutil.copytree(
+        source,
+        destination,
+        ignore=shutil.ignore_patterns(_ARTIFACT_METADATA_NAME),
+    )
+
+
+def _copy_directory_contents(source: Path, destination: Path) -> None:
+    """Copy a checkpoint directory into the release repository root."""
+    if not source.is_dir():
+        raise ReleaseError(f"Merged Transformers checkpoint does not exist: {source}")
+    for child in source.iterdir():
+        if child.name == _ARTIFACT_METADATA_NAME:
+            continue
+        target = destination / child.name
+        if child.is_dir():
+            _copy_directory(child, target)
+        else:
+            shutil.copy2(child, target)
+
+
+def _read_metadata(directory: Path) -> dict[str, Any] | None:
+    path = directory / _ARTIFACT_METADATA_NAME
+    if not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ReleaseError(f"Invalid artifact metadata: {path}") from exc
+    if not isinstance(value, dict):
+        raise ReleaseError(f"Artifact metadata must be a JSON object: {path}")
+    return value
+
+
+def _published_artifacts(local_model_root: Path) -> dict[str, Any]:
+    """Return local provenance for the exact artifact directories being published."""
+    artifacts: dict[str, Any] = {
+        "transformers": _read_metadata(local_model_root / "transformers" / "merged")
+    }
+    for artifact_type in ("gguf", "onnx"):
+        artifact_root = local_model_root / artifact_type
+        if artifact_root.is_dir():
+            artifacts[artifact_type] = {
+                variant.name: _read_metadata(variant)
+                for variant in sorted(artifact_root.iterdir())
+                if variant.is_dir()
+            }
+    return artifacts
+
+
+def _provenance(
+    *, manifest: Mapping[str, Any], model: Mapping[str, Any], repo_id: str, local_model_root: Path
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "release_repository": repo_id,
+        "manifest": {
+            "version": manifest["version"],
+            "experiments": manifest["experiments"],
+            "dataset": manifest["dataset"],
+            "prompt": manifest["prompt"],
+        },
+        "model": dict(model),
+        "local_artifact_metadata": _published_artifacts(local_model_root),
+    }
+
+
+def _model_card(*, manifest: Mapping[str, Any], model: Mapping[str, Any], repo_id: str) -> str:
+    prompt = manifest["prompt"]
+    adapter = model["adapter"]
+    return f"""---
+library_name: transformers
+base_model: {model["base_model_id"]}
+tags:
+- intent-classification
+- tool-routing
+- edge
+---
+
+# Intent Classifier {manifest["version"]} {model["name"]}
+
+This is a merged, fine-tuned intent-classifier release. It is not the base
+model named below.
+
+## Model identity
+
+| Field | Value |
+| --- | --- |
+| Release repository | `{repo_id}` |
+| Release | `{manifest["version"]}` |
+| Base model | `{model["base_model_id"]}` |
+| Base revision | `{model["base_model_revision"]}` |
+| Fine-tuning method | `{adapter["technique"]}`, configuration `{adapter["configuration"]}` |
+| Adapter source | `{manifest["experiments"]["repository"]}` at `{manifest["experiments"]["revision"]}` |
+| Adapter subfolder | `{adapter["subfolder"]}` |
+| Dataset size | `{manifest["dataset"]["size"]}` |
+| Prompt template | `{prompt["template_id"]}` |
+| Native output | `{prompt["output_format"]}`; no-tool token `{prompt["model_no_tool_token"]}` |
+
+## Artifacts
+
+- **Transformers:** files at the repository root.
+- **GGUF:** `gguf/<quant>/model.gguf` for llama.cpp.
+- **ONNX:** `onnx/<variant>/` for ONNX Runtime. Keep all files in a variant
+  directory together, including any external-data files referenced by
+  `model.onnx`.
+
+## Provenance
+
+`benchmark_provenance.json` records the pinned manifest, source revisions, and
+local artifact metadata used to produce this release.
+"""
+
+
+def release_plan(
+    *,
+    repo_root: Path,
+    manifest: Mapping[str, Any],
+    model: Mapping[str, Any],
+    repo_id: str,
+) -> dict[str, Any]:
+    """Validate and describe the local files that will be published."""
+    local_model_root = model_root(repo_root, manifest, model)
+    merged = local_model_root / "transformers" / "merged"
+    if not merged.is_dir():
+        raise ReleaseError(f"Merged Transformers checkpoint does not exist: {merged}")
+    artifact_paths: dict[str, Path] = {"transformers": merged}
+    for artifact_type in ("gguf", "onnx"):
+        artifact_root = local_model_root / artifact_type
+        if artifact_root.is_dir():
+            artifact_paths[artifact_type] = artifact_root
+    return {
+        "model": model["name"],
+        "repo_id": repo_id,
+        "local_model_root": local_model_root,
+        "artifact_paths": artifact_paths,
+    }
+
+
+def assemble_release_tree(
+    *,
+    repo_root: Path,
+    manifest: Mapping[str, Any],
+    model: Mapping[str, Any],
+    repo_id: str,
+    destination: Path,
+) -> dict[str, Any]:
+    """Assemble one model's publishable files without changing local artifacts."""
+    plan = release_plan(repo_root=repo_root, manifest=manifest, model=model, repo_id=repo_id)
+    local_model_root = plan["local_model_root"]
+    merged = plan["artifact_paths"]["transformers"]
+    _copy_directory_contents(merged, destination)
+
+    published_types = list(plan["artifact_paths"])
+    for artifact_type in ("gguf", "onnx"):
+        local_artifact_root = plan["artifact_paths"].get(artifact_type)
+        if local_artifact_root is not None:
+            _copy_directory(local_artifact_root, destination / artifact_type)
+
+    provenance = _provenance(
+        manifest=manifest, model=model, repo_id=repo_id, local_model_root=local_model_root
+    )
+    (destination / "benchmark_provenance.json").write_text(
+        json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    (destination / "README.md").write_text(
+        _model_card(manifest=manifest, model=model, repo_id=repo_id), encoding="utf-8"
+    )
+    return {
+        "model": model["name"],
+        "repo_id": repo_id,
+        "local_model_root": str(local_model_root),
+        "artifact_types": published_types,
+    }
+
+
+def _upload_release(
     *,
     api: HfApi,
-    local_dir: Path,
-    remote_subdir: str,
-    commit_message: str,
+    manifest: Mapping[str, Any],
+    model: Mapping[str, Any],
+    plan: Mapping[str, Any],
+    private: bool,
+    replace: bool,
 ) -> None:
-    if not local_dir.is_dir():
-        raise FileNotFoundError(f"Local folder not found: {local_dir}")
+    """Upload local artifact folders directly, without duplicating large weights."""
+    repo_id = str(plan["repo_id"])
+    artifact_paths = plan["artifact_paths"]
+    local_model_root = Path(plan["local_model_root"])
+    api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
+    ignore_patterns = [_ARTIFACT_METADATA_NAME, f"**/{_ARTIFACT_METADATA_NAME}"]
 
-    api.upload_folder(
-        folder_path=str(local_dir),
-        repo_id=HF_RELEASE_REPO,
-        path_in_repo=remote_subdir,
-        repo_type="model",
-        commit_message=commit_message,
-    )
-
-
-def _upload_one_run(run: str, version: str, models_root: Path, hf_token: str | None) -> None:
-    model_key, technique, lora_config, dataset_size = _parse_run(run)
-    local_root = _run_root(run, models_root)
-
-    api = HfApi(token=hf_token)
-    api.create_repo(repo_id=HF_RELEASE_REPO, repo_type="model", exist_ok=True, private=True)
-
-    safetensors_dir = local_root / "safetensors"
-    print(f"\nUploading safetensors for {run}: {safetensors_dir}")
-    _upload_folder(
-        api=api,
-        local_dir=safetensors_dir,
-        remote_subdir=f"{model_key}/safetensors",
-        commit_message=(
-            f"Add merged model {model_key} ({technique}-{lora_config}-{dataset_size}) [{version}]"
-        ),
-    )
-
-    for format_name in ["gguf", "onnx"]:
-        format_dir = local_root / format_name
-        if not format_dir.is_dir():
-            print(f"Skipping {format_name} for {run} (not found: {format_dir}).")
-            continue
-
-        print(f"Uploading {format_name} for {run}: {format_dir}")
-        _upload_folder(
-            api=api,
-            local_dir=format_dir,
-            remote_subdir=f"{model_key}/{format_name}",
-            commit_message=(
-                f"Add {format_name.upper()} for {model_key} "
-                f"({technique}-{lora_config}-{dataset_size}) [{version}]"
-            ),
+    for index, (artifact_type, artifact_path) in enumerate(artifact_paths.items()):
+        api.upload_folder(
+            repo_id=repo_id,
+            repo_type="model",
+            folder_path=str(artifact_path),
+            path_in_repo="." if artifact_type == "transformers" else artifact_type,
+            ignore_patterns=ignore_patterns,
+            delete_patterns="*" if replace and index == 0 else None,
+            commit_message=f"Publish {manifest['version']} {model['name']} {artifact_type} artifacts",
         )
 
-
-def _create_hf_tag(version: str, message: str, hf_token: str | None) -> None:
-    api = HfApi(token=hf_token)
-    print(f"\nCreating HF tag '{version}' on {HF_RELEASE_REPO}...")
-    api.create_tag(
-        repo_id=HF_RELEASE_REPO,
+    provenance = _provenance(
+        manifest=manifest,
+        model=model,
+        repo_id=repo_id,
+        local_model_root=local_model_root,
+    )
+    api.upload_file(
+        repo_id=repo_id,
         repo_type="model",
-        tag=version,
-        tag_message=message,
-        token=hf_token,
-        exist_ok=True,
+        path_in_repo="README.md",
+        path_or_fileobj=_model_card(manifest=manifest, model=model, repo_id=repo_id).encode(),
+        commit_message=f"Document {manifest['version']} {model['name']} release",
     )
-    print(f"HF tag '{version}' created.")
-
-
-def _create_github_tag(version: str, message: str) -> None:
-    print(f"\nCreating local git tag '{version}'...")
-    result = subprocess.run(
-        ["git", "tag", "-a", version, "-m", message],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+    api.upload_file(
+        repo_id=repo_id,
+        repo_type="model",
+        path_in_repo="benchmark_provenance.json",
+        path_or_fileobj=(json.dumps(provenance, indent=2, sort_keys=True) + "\n").encode(),
+        commit_message=f"Add {manifest['version']} {model['name']} provenance",
     )
-    if result.returncode != 0:
-        print(f"WARNING: git tag failed: {result.stderr.strip()}")
-        return
-    print(f"Local tag '{version}' created.")
-    print(f"Review it, then push with: git push origin {version}")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Upload local release artifacts and tag the repository."
-    )
-    parser.add_argument("--version", default=CURRENT_VERSION, help="Version tag, e.g. v1.0")
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--runs",
-        nargs="*",
-        default=[],
-        metavar="MODEL_TECHNIQUE_CFG_SIZE",
-        help=(
-            "Runs to upload, e.g. qwen3-0.6b_LoRA_C_1k llama3.2-1b_LoRA_C_1k. "
-            "Each run maps to models/<run>_merged/{safetensors,gguf,onnx}."
-        ),
+        "--version", required=True, help="Manifest/release version, for example v1.0."
+    )
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        default=["all"],
+        metavar="MODEL",
+        help="Exact manifest model name(s), or the sole value 'all'.",
+    )
+    parser.add_argument(
+        "--owner",
+        default="kon172verma",
+        help="Hugging Face owner or organisation namespace (default: kon172verma).",
     )
     parser.add_argument(
         "--models-root",
         type=Path,
-        default=REPO_ROOT / "models",
-        help="Root folder containing <run>_merged model directories.",
+        default=_REPO_ROOT / "models",
+        help="Root containing the standard models/<version>/<model-name>/ layout.",
     )
     parser.add_argument(
-        "--tag-only",
+        "--private",
         action="store_true",
-        help="Skip uploads; only create the version tag.",
+        help="Create new Hub repositories as private. Existing repository visibility is unchanged.",
     )
     parser.add_argument(
-        "--message",
-        default=None,
-        help="Human-readable tag annotation. Defaults to the version string.",
-    )
-    parser.add_argument(
-        "--no-tag",
+        "--replace",
         action="store_true",
-        help="Upload artifacts but do NOT create a tag.",
+        help="Delete remote files absent from the assembled release before uploading. Requires --execute.",
     )
     parser.add_argument(
-        "--hf-tag",
+        "--execute",
         action="store_true",
-        help="Also create a tag on HF_RELEASE_REPO (default: local git tag only).",
+        help="Create repositories and upload artifacts. Without this flag, print a no-write plan.",
     )
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    if not args.tag_only and not args.runs:
-        parser.error("Specify --runs unless using --tag-only.")
 
-    hf_token: str | None = os.environ.get("HF_TOKEN")
-    if not hf_token:
-        print("WARNING: HF_TOKEN not set. Pushes to private repos may fail.")
+def main() -> int:
+    args = _parse_args()
+    manifest_path = _REPO_ROOT / "manifests" / f"{args.version}.json"
+    try:
+        manifest = load_manifest(manifest_path)
+        if manifest["version"] != args.version:
+            raise ReleaseError(
+                f"Manifest version {manifest['version']!r} does not match --version {args.version!r}"
+            )
+        models = select_models(manifest, args.models)
+    except (ManifestError, ReleaseError) as exc:
+        print(f"release: error: {exc}", file=sys.stderr)
+        return 2
 
-    if not args.tag_only:
-        for run in args.runs:
-            try:
-                _upload_one_run(run, args.version, args.models_root, hf_token)
-            except Exception as exc:
-                print(f"ERROR uploading {run}: {exc}")
-                print("Skipping this run; continuing with others.")
+    repo_names = [release_repository_name(args.version, model["name"]) for model in models]
+    if len(repo_names) != len(set(repo_names)):
+        print(
+            "release: error: selected models do not have unique version-and-size repository names",
+            file=sys.stderr,
+        )
+        return 2
+    if args.replace and not args.execute:
+        print("release: error: --replace requires --execute", file=sys.stderr)
+        return 2
 
-    if not args.no_tag:
-        tag_message = args.message or args.version
-        _create_github_tag(args.version, tag_message)
-        if args.hf_tag:
-            _create_hf_tag(args.version, tag_message, hf_token)
-    else:
-        print("\n--no-tag set; skipping tag creation.")
+    token = _read_hf_token() if args.execute else None
+    if args.execute and not token:
+        print("release: error: HF_TOKEN is required for --execute", file=sys.stderr)
+        return 2
 
-    print("\nDone.")
+    api = HfApi(token=token) if args.execute else None
+    for model in models:
+        repo_id = release_repository_id(args.owner, args.version, model["name"])
+        try:
+            plan = release_plan(
+                repo_root=args.models_root.parent, manifest=manifest, model=model, repo_id=repo_id
+            )
+        except ReleaseError as exc:
+            print(f"release: error for {model['name']}: {exc}", file=sys.stderr)
+            return 2
+
+        print(f"[plan] {plan['model']} -> {plan['repo_id']} ({', '.join(plan['artifact_paths'])})")
+        if api is None:
+            continue
+        _upload_release(
+            api=api,
+            manifest=manifest,
+            model=model,
+            plan=plan,
+            private=args.private,
+            replace=args.replace,
+        )
+        print(f"[uploaded] https://huggingface.co/{repo_id}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

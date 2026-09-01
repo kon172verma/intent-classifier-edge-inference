@@ -1,47 +1,39 @@
-# release_scripts
+# Release publication
 
-Release workflow for intent-classifier-inference.
-
-## Responsibilities
-
-- `merge_models.py`: compatibility CLI for the manifest-driven source download and merge flow.
-- `release.py`: upload already-prepared local artifacts (safetensors/gguf/onnx) and tag release.
-- `upload_release.py`: upload a model folder from local `intent-classifier-release` clone.
-
-## Manifest-Driven Model Layout
-
-`merge_models.py` writes the standard, version-scoped layout:
+`release.py` publishes the locally built artifacts for one manifest version to
+one Hugging Face model repository per release model:
 
 ```text
-models/<version>/<model-name>/
-  source/base/
-  source/adapter/
-  transformers/merged/
+kon172verma/intent-classifier-v1.0-0.6b
+kon172verma/intent-classifier-v1.0-1b
 ```
 
-GGUF and ONNX artifact builders will add sibling directories beneath the same
-model root in the next pipeline phase. The older release uploader still uses
-the legacy release layout and is not invoked by `merge_models.py`.
+It reads `manifests/<version>.json` and `models/<version>/<model-name>/`.
+The merged Transformers checkpoint is copied to the release-repository root;
+GGUF and ONNX retain their `gguf/` and `onnx/` directories. Source snapshots,
+adapters, temporary files, and pipeline run results are never published.
 
 ## Commands
 
-1. Merge adapters into local safetensors:
+Preview the repositories and local artifacts to be published:
 
 ```bash
-python release_scripts/merge_models.py --manifest manifests/v1.0.json --models all
+python release_scripts/release.py --version v1.0 --models all
 ```
 
-2. Build GGUF and ONNX artifacts through the benchmark pipeline once Phase 3
-   is implemented.
-
-3. The legacy release uploader may still upload its existing release layout:
+Create repositories as needed and upload the release artifacts. `HF_TOKEN` is
+loaded from `.env` when present:
 
 ```bash
-python release_scripts/release.py --version v1.0 --runs qwen3-0.6b_LoRA_C_1k llama3.2-1b_LoRA_C_1k
+python release_scripts/release.py --version v1.0 --models all --execute
 ```
 
-4. Optional: also create an HF tag:
+Use `--private` only when creating private release repositories. To replace an
+existing release repository entirely, use the explicit destructive operation:
 
 ```bash
-python release_scripts/release.py --version v1.0 --runs qwen3-0.6b_LoRA_C_1k llama3.2-1b_LoRA_C_1k --hf-tag
+python release_scripts/release.py --version v1.0 --models all --replace --execute
 ```
+
+`--replace` removes remote files that are not part of the newly assembled
+release. It does not alter the local `models/` directory.

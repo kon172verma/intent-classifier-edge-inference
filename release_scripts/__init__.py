@@ -1,1 +1,1 @@
-"""Release workflow scripts for intent-classifier-inference."""
+"""Version-driven Hugging Face release publication helpers."""

@@ -192,8 +192,8 @@ new pipeline has produced an auditable replacement.
      in the agreed layout.
    - [x] Merge locally snapshotted adapters through the manifest-driven
      pipeline entry point and record builder/input provenance.
-   - [x] Refactor `release_scripts/merge_models.py` into a manifest-driven
-     compatibility entry point; it now shares the pipeline merge implementation.
+   - [x] Keep merging in the manifest-driven pipeline; release publication is
+     intentionally separate from artifact construction.
 
 3. **Artifact builders**
    - [x] Create `scripts/build_gguf.py`, which accepts explicit merged paths
@@ -235,7 +235,7 @@ new pipeline has produced an auditable replacement.
 
 ## Existing files expected to change when implementation is authorized
 
-- `release_scripts/merge_models.py` and `release_scripts/release_common.py`
+- `release_scripts/release.py` and its publication documentation
 - `evaluation_lib/config.py`, `evaluation_lib/prompt.py`,
   `evaluation_lib/output_parser.py`, `evaluation_lib/metrics.py`, and
   `evaluation_lib/plot_common.py`
