@@ -4,9 +4,9 @@
 
 - **Training** — [kon172verma/intent-classifier](https://github.com/kon172verma/intent-classifier) (GitHub): fine-tuning code, configs, and reports.
 - **Experiments** — [kon172verma/intent-classifier-experiments](https://huggingface.co/kon172verma/intent-classifier-experiments) (Hugging Face): every adapter produced during experimentation, organized by version.
-- **Releases** — Hugging Face model repositories, one per release model, such
-  as `kon172verma/intent-classifier-v1.0-0.6b`: merged Transformers weights
-  plus GGUF and ONNX exports.
+- **Releases** — the [Hugging Face intent-classifier repository](https://huggingface.co/kon172verma/intent-classifier), with one versioned folder per
+  fine-tuned model containing merged Transformers weights plus GGUF and ONNX
+  exports.
 
 ## Purpose
 
@@ -31,16 +31,18 @@ Fine-tuning happens outside this repository.
 
 - [kon172verma/intent-classifier](https://github.com/kon172verma/intent-classifier) (GitHub) is used for fine-tuning code and workflows.
 - [kon172verma/intent-classifier-experiments](https://huggingface.co/kon172verma/intent-classifier-experiments) (Hugging Face) holds every adapter produced during experimentation, versioned by folder.
-- Version/model-scoped Hugging Face release repositories hold merged model
-  weights and deployable artifacts. For example,
-  `kon172verma/intent-classifier-v1.0-0.6b` is the Qwen3 0.6B v1.0 release.
+- The [Hugging Face release repository](https://huggingface.co/kon172verma/intent-classifier)
+  holds version/model-scoped folders containing merged model weights and
+  deployable artifacts. For example, `v1.0-qwen3-0.6b/` is the Qwen3 0.6B
+  v1.0 release.
 
 Merging and unloading adapters is handled by the manifest-driven benchmark
 pipeline. `release_scripts/` only publishes completed release artifacts.
 
 Inference flow in this repository:
 
-1. Pull the merged release model (Transformers format) from its release repo.
+1. Pull the merged release model (Transformers format) from its release
+   folder.
 2. Produce deployable artifacts for runtime comparison.
 3. Publish completed artifacts with
    `release_scripts/release.py --version <version> --models all --execute`.

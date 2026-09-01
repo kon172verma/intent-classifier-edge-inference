@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Publish version-scoped, deployable model artifacts to Hugging Face.
 
-Each selected manifest model receives its own Hub model repository. The merged
-Transformers checkpoint is published at the repository root while GGUF and
-ONNX artifacts remain in their format-specific subdirectories.
+All selected manifest models are published to one Hub model repository.  Each
+model is isolated in a version-and-model subfolder, with its Transformers,
+GGUF, and ONNX artifacts kept in their native directories.
 
 Example:
     python release_scripts/release.py --version v1.0 --models all --execute
@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import sys
 from collections.abc import Mapping
@@ -49,23 +48,13 @@ def _read_hf_token() -> str | None:
     )
 
 
-def _model_size_label(model_name: str) -> str:
-    """Return the parameter-size suffix used in a release repository name."""
-    matches = re.findall(r"(\d+(?:\.\d+)?)([BM])", model_name, flags=re.IGNORECASE)
-    if not matches:
-        raise ReleaseError(f"Cannot derive a parameter-size label from model name: {model_name}")
-    number, unit = matches[-1]
-    return f"{number}{unit.lower()}"
-
-
-def release_repository_name(version: str, model_name: str) -> str:
-    """Return the simple, version-and-size scoped Hub repository name."""
-    return f"intent-classifier-{version}-{_model_size_label(model_name)}"
-
-
-def release_repository_id(owner: str, version: str, model_name: str) -> str:
-    """Return the fully qualified Hub repository ID for one release model."""
-    return f"{owner}/{release_repository_name(version, model_name)}"
+def release_model_folder(manifest: Mapping[str, Any], model: Mapping[str, Any]) -> str:
+    """Return the versioned subfolder assigned to one model in the Hub repo."""
+    version = manifest.get("version")
+    slug = model.get("slug")
+    if not isinstance(version, str) or not isinstance(slug, str) or not slug:
+        raise ReleaseError("Manifest model must define a non-empty slug for release publication")
+    return f"{version}-{slug}"
 
 
 def _copy_directory(source: Path, destination: Path) -> None:
@@ -76,20 +65,6 @@ def _copy_directory(source: Path, destination: Path) -> None:
         destination,
         ignore=shutil.ignore_patterns(_ARTIFACT_METADATA_NAME),
     )
-
-
-def _copy_directory_contents(source: Path, destination: Path) -> None:
-    """Copy a checkpoint directory into the release repository root."""
-    if not source.is_dir():
-        raise ReleaseError(f"Merged Transformers checkpoint does not exist: {source}")
-    for child in source.iterdir():
-        if child.name == _ARTIFACT_METADATA_NAME:
-            continue
-        target = destination / child.name
-        if child.is_dir():
-            _copy_directory(child, target)
-        else:
-            shutil.copy2(child, target)
 
 
 def _read_metadata(directory: Path) -> dict[str, Any] | None:
@@ -122,11 +97,17 @@ def _published_artifacts(local_model_root: Path) -> dict[str, Any]:
 
 
 def _provenance(
-    *, manifest: Mapping[str, Any], model: Mapping[str, Any], repo_id: str, local_model_root: Path
+    *,
+    manifest: Mapping[str, Any],
+    model: Mapping[str, Any],
+    repo_id: str,
+    model_folder: str,
+    local_model_root: Path,
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "release_repository": repo_id,
+        "release_subfolder": model_folder,
         "manifest": {
             "version": manifest["version"],
             "experiments": manifest["experiments"],
@@ -138,19 +119,18 @@ def _provenance(
     }
 
 
-def _model_card(*, manifest: Mapping[str, Any], model: Mapping[str, Any], repo_id: str) -> str:
+def _model_readme(
+    *, manifest: Mapping[str, Any], model: Mapping[str, Any], repo_id: str, model_folder: str
+) -> str:
+    """Return nested model documentation, not a separate Hub model card.
+
+    Hugging Face only interprets the repository-root README front matter as
+    model-card metadata.  Root documentation is deliberately outside this
+    publishing workflow, so this per-model README is ordinary Markdown.
+    """
     prompt = manifest["prompt"]
     adapter = model["adapter"]
-    return f"""---
-library_name: transformers
-base_model: {model["base_model_id"]}
-tags:
-- intent-classification
-- tool-routing
-- edge
----
-
-# Intent Classifier {manifest["version"]} {model["name"]}
+    return f"""# Intent Classifier {manifest["version"]} — {model["name"]}
 
 This is a merged, fine-tuned intent-classifier release. It is not the base
 model named below.
@@ -160,6 +140,7 @@ model named below.
 | Field | Value |
 | --- | --- |
 | Release repository | `{repo_id}` |
+| Release subfolder | `{model_folder}` |
 | Release | `{manifest["version"]}` |
 | Base model | `{model["base_model_id"]}` |
 | Base revision | `{model["base_model_revision"]}` |
@@ -172,7 +153,8 @@ model named below.
 
 ## Artifacts
 
-- **Transformers:** files at the repository root.
+- **Transformers:** `transformers/`. Load with
+  `subfolder="{model_folder}/transformers"` from `{repo_id}`.
 - **GGUF:** `gguf/<quant>/model.gguf` for llama.cpp.
 - **ONNX:** `onnx/<variant>/` for ONNX Runtime. Keep all files in a variant
   directory together, including any external-data files referenced by
@@ -181,7 +163,7 @@ model named below.
 ## Provenance
 
 `benchmark_provenance.json` records the pinned manifest, source revisions, and
-local artifact metadata used to produce this release.
+local artifact metadata used to produce this model folder.
 """
 
 
@@ -205,6 +187,7 @@ def release_plan(
     return {
         "model": model["name"],
         "repo_id": repo_id,
+        "model_folder": release_model_folder(manifest, model),
         "local_model_root": local_model_root,
         "artifact_paths": artifact_paths,
     }
@@ -218,30 +201,37 @@ def assemble_release_tree(
     repo_id: str,
     destination: Path,
 ) -> dict[str, Any]:
-    """Assemble one model's publishable files without changing local artifacts."""
+    """Assemble one nested model folder without changing local artifacts."""
     plan = release_plan(repo_root=repo_root, manifest=manifest, model=model, repo_id=repo_id)
     local_model_root = plan["local_model_root"]
-    merged = plan["artifact_paths"]["transformers"]
-    _copy_directory_contents(merged, destination)
+    model_folder = str(plan["model_folder"])
+    model_destination = destination / model_folder
+    model_destination.mkdir(parents=True, exist_ok=True)
 
     published_types = list(plan["artifact_paths"])
-    for artifact_type in ("gguf", "onnx"):
+    for artifact_type in ("transformers", "gguf", "onnx"):
         local_artifact_root = plan["artifact_paths"].get(artifact_type)
         if local_artifact_root is not None:
-            _copy_directory(local_artifact_root, destination / artifact_type)
+            _copy_directory(local_artifact_root, model_destination / artifact_type)
 
     provenance = _provenance(
-        manifest=manifest, model=model, repo_id=repo_id, local_model_root=local_model_root
+        manifest=manifest,
+        model=model,
+        repo_id=repo_id,
+        model_folder=model_folder,
+        local_model_root=local_model_root,
     )
-    (destination / "benchmark_provenance.json").write_text(
+    (model_destination / "benchmark_provenance.json").write_text(
         json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    (destination / "README.md").write_text(
-        _model_card(manifest=manifest, model=model, repo_id=repo_id), encoding="utf-8"
+    (model_destination / "README.md").write_text(
+        _model_readme(manifest=manifest, model=model, repo_id=repo_id, model_folder=model_folder),
+        encoding="utf-8",
     )
     return {
         "model": model["name"],
         "repo_id": repo_id,
+        "model_folder": model_folder,
         "local_model_root": str(local_model_root),
         "artifact_types": published_types,
     }
@@ -253,24 +243,21 @@ def _upload_release(
     manifest: Mapping[str, Any],
     model: Mapping[str, Any],
     plan: Mapping[str, Any],
-    private: bool,
-    replace: bool,
 ) -> None:
     """Upload local artifact folders directly, without duplicating large weights."""
     repo_id = str(plan["repo_id"])
     artifact_paths = plan["artifact_paths"]
     local_model_root = Path(plan["local_model_root"])
-    api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
+    model_folder = str(plan["model_folder"])
     ignore_patterns = [_ARTIFACT_METADATA_NAME, f"**/{_ARTIFACT_METADATA_NAME}"]
 
-    for index, (artifact_type, artifact_path) in enumerate(artifact_paths.items()):
+    for artifact_type, artifact_path in artifact_paths.items():
         api.upload_folder(
             repo_id=repo_id,
             repo_type="model",
             folder_path=str(artifact_path),
-            path_in_repo="." if artifact_type == "transformers" else artifact_type,
+            path_in_repo=f"{model_folder}/{artifact_type}",
             ignore_patterns=ignore_patterns,
-            delete_patterns="*" if replace and index == 0 else None,
             commit_message=f"Publish {manifest['version']} {model['name']} {artifact_type} artifacts",
         )
 
@@ -278,19 +265,22 @@ def _upload_release(
         manifest=manifest,
         model=model,
         repo_id=repo_id,
+        model_folder=model_folder,
         local_model_root=local_model_root,
     )
     api.upload_file(
         repo_id=repo_id,
         repo_type="model",
-        path_in_repo="README.md",
-        path_or_fileobj=_model_card(manifest=manifest, model=model, repo_id=repo_id).encode(),
+        path_in_repo=f"{model_folder}/README.md",
+        path_or_fileobj=_model_readme(
+            manifest=manifest, model=model, repo_id=repo_id, model_folder=model_folder
+        ).encode(),
         commit_message=f"Document {manifest['version']} {model['name']} release",
     )
     api.upload_file(
         repo_id=repo_id,
         repo_type="model",
-        path_in_repo="benchmark_provenance.json",
+        path_in_repo=f"{model_folder}/benchmark_provenance.json",
         path_or_fileobj=(json.dumps(provenance, indent=2, sort_keys=True) + "\n").encode(),
         commit_message=f"Add {manifest['version']} {model['name']} provenance",
     )
@@ -309,9 +299,9 @@ def _parse_args() -> argparse.Namespace:
         help="Exact manifest model name(s), or the sole value 'all'.",
     )
     parser.add_argument(
-        "--owner",
-        default="kon172verma",
-        help="Hugging Face owner or organisation namespace (default: kon172verma).",
+        "--repo-id",
+        default="kon172verma/intent-classifier",
+        help="Single Hugging Face model repository to receive release folders.",
     )
     parser.add_argument(
         "--models-root",
@@ -323,11 +313,6 @@ def _parse_args() -> argparse.Namespace:
         "--private",
         action="store_true",
         help="Create new Hub repositories as private. Existing repository visibility is unchanged.",
-    )
-    parser.add_argument(
-        "--replace",
-        action="store_true",
-        help="Delete remote files absent from the assembled release before uploading. Requires --execute.",
     )
     parser.add_argument(
         "--execute",
@@ -351,45 +336,43 @@ def main() -> int:
         print(f"release: error: {exc}", file=sys.stderr)
         return 2
 
-    repo_names = [release_repository_name(args.version, model["name"]) for model in models]
-    if len(repo_names) != len(set(repo_names)):
-        print(
-            "release: error: selected models do not have unique version-and-size repository names",
-            file=sys.stderr,
-        )
-        return 2
-    if args.replace and not args.execute:
-        print("release: error: --replace requires --execute", file=sys.stderr)
-        return 2
-
     token = _read_hf_token() if args.execute else None
     if args.execute and not token:
         print("release: error: HF_TOKEN is required for --execute", file=sys.stderr)
         return 2
 
-    api = HfApi(token=token) if args.execute else None
+    plans: list[dict[str, Any]] = []
     for model in models:
-        repo_id = release_repository_id(args.owner, args.version, model["name"])
         try:
             plan = release_plan(
-                repo_root=args.models_root.parent, manifest=manifest, model=model, repo_id=repo_id
+                repo_root=args.models_root.parent,
+                manifest=manifest,
+                model=model,
+                repo_id=args.repo_id,
             )
         except ReleaseError as exc:
             print(f"release: error for {model['name']}: {exc}", file=sys.stderr)
             return 2
 
-        print(f"[plan] {plan['model']} -> {plan['repo_id']} ({', '.join(plan['artifact_paths'])})")
-        if api is None:
-            continue
+        plans.append(plan)
+        print(
+            f"[plan] {plan['model']} -> {plan['repo_id']}/{plan['model_folder']} "
+            f"({', '.join(plan['artifact_paths'])})"
+        )
+
+    if not args.execute:
+        return 0
+
+    api = HfApi(token=token)
+    api.create_repo(repo_id=args.repo_id, repo_type="model", private=args.private, exist_ok=True)
+    for model, plan in zip(models, plans, strict=True):
         _upload_release(
             api=api,
             manifest=manifest,
             model=model,
             plan=plan,
-            private=args.private,
-            replace=args.replace,
         )
-        print(f"[uploaded] https://huggingface.co/{repo_id}")
+        print(f"[uploaded] https://huggingface.co/{args.repo_id}/tree/main/{plan['model_folder']}")
     return 0
 
 

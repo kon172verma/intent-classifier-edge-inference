@@ -8,13 +8,13 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from release_scripts.release import assemble_release_tree, release_repository_id
+from release_scripts.release import assemble_release_tree, release_model_folder
 
 
 class ReleaseScriptTests(unittest.TestCase):
     """Ensure a release repository contains only deployable artifacts."""
 
-    def test_release_tree_flattens_transformers_and_keeps_deployment_formats(self) -> None:
+    def test_release_tree_keeps_each_format_in_a_versioned_model_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             repo_root = Path(temporary_directory)
             manifest: dict[str, Any] = {
@@ -29,6 +29,7 @@ class ReleaseScriptTests(unittest.TestCase):
             }
             model: dict[str, Any] = {
                 "name": "Qwen3-0.6B",
+                "slug": "qwen3-0.6b",
                 "base_model_id": "Qwen/Qwen3-0.6B",
                 "base_model_revision": "b" * 40,
                 "adapter": {"technique": "LoRA", "configuration": "C", "subfolder": "v1.0/adapter"},
@@ -49,7 +50,9 @@ class ReleaseScriptTests(unittest.TestCase):
 
             destination = repo_root / "staging"
             destination.mkdir()
-            repo_id = release_repository_id("kon172verma", "v1.0", model["name"])
+            (destination / "README.md").write_text("Manual root documentation", encoding="utf-8")
+            (destination / "LICENSE").write_text("Manual root license", encoding="utf-8")
+            repo_id = "kon172verma/intent-classifier"
             result = assemble_release_tree(
                 repo_root=repo_root,
                 manifest=manifest,
@@ -58,16 +61,23 @@ class ReleaseScriptTests(unittest.TestCase):
                 destination=destination,
             )
 
-            self.assertEqual(result["repo_id"], "kon172verma/intent-classifier-v1.0-0.6b")
-            self.assertTrue((destination / "config.json").is_file())
-            self.assertTrue((destination / "model.safetensors").is_file())
-            self.assertTrue((destination / "gguf" / "Q4_K_M" / "model.gguf").is_file())
-            self.assertTrue((destination / "onnx" / "fp32" / "model.onnx").is_file())
+            model_folder = release_model_folder(manifest, model)
+            staged_model = destination / model_folder
+            self.assertEqual(result["repo_id"], repo_id)
+            self.assertEqual(result["model_folder"], "v1.0-qwen3-0.6b")
+            self.assertTrue((staged_model / "transformers" / "config.json").is_file())
+            self.assertTrue((staged_model / "transformers" / "model.safetensors").is_file())
+            self.assertTrue((staged_model / "gguf" / "Q4_K_M" / "model.gguf").is_file())
+            self.assertTrue((staged_model / "onnx" / "fp32" / "model.onnx").is_file())
             self.assertFalse((destination / "transformers").exists())
             self.assertFalse((destination / "source").exists())
-            self.assertFalse((destination / ".benchmark_artifact.json").exists())
-            provenance = json.loads((destination / "benchmark_provenance.json").read_text())
+            self.assertEqual((destination / "README.md").read_text(), "Manual root documentation")
+            self.assertEqual((destination / "LICENSE").read_text(), "Manual root license")
+            self.assertFalse((staged_model / "transformers" / ".benchmark_artifact.json").exists())
+            self.assertFalse((staged_model / "README.md").read_text().startswith("---"))
+            provenance = json.loads((staged_model / "benchmark_provenance.json").read_text())
             self.assertEqual(provenance["release_repository"], repo_id)
+            self.assertEqual(provenance["release_subfolder"], model_folder)
 
 
 if __name__ == "__main__":
