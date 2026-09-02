@@ -57,6 +57,9 @@ Artifact targets:
 
 ## Manifest Pipeline
 
+For a concise command reference covering the pipeline and each direct
+evaluator, see [dev_notes.md](dev_notes.md).
+
 The pipeline resolves version manifests without side effects by default. It
 validates a version manifest and prints the exact selected models, required
 artifacts, supported engine variants, cache modes, and dataset inputs. It does
