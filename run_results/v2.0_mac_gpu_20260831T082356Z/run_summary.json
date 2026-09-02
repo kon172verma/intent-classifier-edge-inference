@@ -1,0 +1,22 @@
+{
+  "plots": [
+    "Qwen3-0.6B/comparison.png",
+    "Llama-3.2-1B/comparison.png"
+  ],
+  "reports": [
+    "Qwen3-0.6B/transformers_float16.json",
+    "Qwen3-0.6B/transformers_bfloat16.json",
+    "Qwen3-0.6B/llama_cpp_Q8_0.json",
+    "Qwen3-0.6B/llama_cpp_Q6_K.json",
+    "Qwen3-0.6B/llama_cpp_Q4_K_M.json",
+    "Qwen3-0.6B/onnx_runtime_fp16.json",
+    "Llama-3.2-1B/transformers_float16.json",
+    "Llama-3.2-1B/transformers_bfloat16.json",
+    "Llama-3.2-1B/llama_cpp_Q8_0.json",
+    "Llama-3.2-1B/llama_cpp_Q6_K.json",
+    "Llama-3.2-1B/llama_cpp_Q4_K_M.json",
+    "Llama-3.2-1B/onnx_runtime_fp16.json"
+  ],
+  "run_id": "v2.0_mac_gpu_20260831T082356Z",
+  "schema_version": 1
+}
