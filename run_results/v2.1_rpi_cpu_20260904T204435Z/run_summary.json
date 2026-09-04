@@ -1,0 +1,32 @@
+{
+  "plots": [
+    "Qwen2.5-0.5B/comparison.png",
+    "Qwen3-0.6B/comparison.png",
+    "SmolLM2-360M/comparison.png"
+  ],
+  "reports": [
+    "Qwen2.5-0.5B/transformers_float32.json",
+    "Qwen2.5-0.5B/llama_cpp_Q4_K_M.json",
+    "Qwen2.5-0.5B/llama_cpp_Q6_K.json",
+    "Qwen2.5-0.5B/llama_cpp_Q8_0.json",
+    "Qwen2.5-0.5B/onnx_runtime_fp32.json",
+    "Qwen2.5-0.5B/onnx_runtime_dynamic-int8.json",
+    "Qwen2.5-0.5B/onnx_runtime_static-int8.json",
+    "Qwen3-0.6B/transformers_float32.json",
+    "Qwen3-0.6B/llama_cpp_Q4_K_M.json",
+    "Qwen3-0.6B/llama_cpp_Q6_K.json",
+    "Qwen3-0.6B/llama_cpp_Q8_0.json",
+    "Qwen3-0.6B/onnx_runtime_fp32.json",
+    "Qwen3-0.6B/onnx_runtime_dynamic-int8.json",
+    "Qwen3-0.6B/onnx_runtime_static-int8.json",
+    "SmolLM2-360M/transformers_float32.json",
+    "SmolLM2-360M/llama_cpp_Q4_K_M.json",
+    "SmolLM2-360M/llama_cpp_Q6_K.json",
+    "SmolLM2-360M/llama_cpp_Q8_0.json",
+    "SmolLM2-360M/onnx_runtime_fp32.json",
+    "SmolLM2-360M/onnx_runtime_dynamic-int8.json",
+    "SmolLM2-360M/onnx_runtime_static-int8.json"
+  ],
+  "run_id": "v2.1_rpi_cpu_20260904T204435Z",
+  "schema_version": 1
+}
