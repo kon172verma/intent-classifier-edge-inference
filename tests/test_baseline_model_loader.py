@@ -27,3 +27,26 @@ def test_loader_passes_torch_dtype_to_transformers() -> None:
     assert loaded_model is model
     load_model.assert_called_once_with(str(model_path), torch_dtype=torch.float32)
     model.eval.assert_called_once_with()
+
+
+def test_loader_attaches_packaged_chat_template_when_missing(tmp_path: Path) -> None:
+    """Support checkpoints that package their template outside tokenizer_config.json."""
+    template = "{{ messages }}"
+    (tmp_path / "chat_template.jinja").write_text(template, encoding="utf-8")
+    tokenizer = MagicMock()
+    tokenizer.chat_template = None
+    model = MagicMock()
+
+    with (
+        patch(
+            "evaluation_baseline.model_loader.AutoTokenizer.from_pretrained",
+            return_value=tokenizer,
+        ),
+        patch(
+            "evaluation_baseline.model_loader.AutoModelForCausalLM.from_pretrained",
+            return_value=model,
+        ),
+    ):
+        load_model_and_tokenizer("Qwen2.5-0.5B", "cpu", "float32", tmp_path)
+
+    assert tokenizer.chat_template == template

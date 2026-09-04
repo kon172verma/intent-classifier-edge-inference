@@ -42,6 +42,10 @@ def load_model_and_tokenizer(
     model_path = model_path or MODEL_PATHS[model_key]
     print(f"[model] Loading tokenizer from {model_path}")
     tokenizer: Any = AutoTokenizer.from_pretrained(str(model_path))
+    template_path = model_path / "chat_template.jinja"
+    if not getattr(tokenizer, "chat_template", None) and template_path.is_file():
+        tokenizer.chat_template = template_path.read_text(encoding="utf-8")
+        print(f"[model] Loaded chat template from {template_path.name}")
 
     dtype = DTYPE_MAP[dtype_name]
     print(
