@@ -81,4 +81,9 @@ def load_text_tokenizer(model_path: Any) -> Any:
     """
     from transformers import AutoTokenizer
 
-    return AutoTokenizer.from_pretrained(str(model_path))
+    tokenizer: Any = AutoTokenizer.from_pretrained(str(model_path))
+    template_path = Path(model_path) / "chat_template.jinja"
+    if not getattr(tokenizer, "chat_template", None) and template_path.is_file():
+        tokenizer.chat_template = template_path.read_text(encoding="utf-8")
+        print(f"[tokenizer] Loaded chat template from {template_path.name}")
+    return tokenizer
