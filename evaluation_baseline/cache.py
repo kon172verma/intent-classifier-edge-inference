@@ -103,8 +103,18 @@ def clone_cache(cache: Any) -> Any:
         if hasattr(_c, "_seen_tokens"):
             _fresh._seen_tokens = _c._seen_tokens
         return fresh
-    # Legacy tuple-of-tuples
-    return tuple((k.clone(), v.clone()) for k, v in cache)
+    # Legacy tuple-of-tuples. Transformers 4.46's generate() can accept this
+    # format only for simple full-prompt calls; a cached prefix needs the
+    # DynamicCache bookkeeping to derive a non-empty cache_position.
+    legacy_clone = tuple((k.clone(), v.clone()) for k, v in cache)
+    try:
+        from transformers.cache_utils import DynamicCache
+
+        if hasattr(DynamicCache, "from_legacy_cache"):
+            return DynamicCache.from_legacy_cache(legacy_clone)
+    except ImportError:
+        pass
+    return legacy_clone
 
 
 # ---------------------------------------------------------------------------
