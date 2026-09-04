@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
+from evaluation_lib.boundary import find_tools_query_boundary
 from evaluation_lib.compatibility import PromptSpec
 from evaluation_lib.prompt import build_full_prompt, build_user_message
 
@@ -74,6 +75,9 @@ class PromptTemplateTests(unittest.TestCase):
             "Take me downtown.\n\n"
             "Selected Tool:",
         )
+
+    def test_boundary_retains_one_token_when_empty_prompt_is_longer(self) -> None:
+        self.assertEqual(find_tools_query_boundary([1, 2, 3], [1, 2, 3, 4]), 2)
 
 
 if __name__ == "__main__":
