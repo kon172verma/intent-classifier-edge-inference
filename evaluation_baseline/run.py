@@ -270,7 +270,6 @@ def main() -> None:
             )
             system_prefill_tokens = system_len
         tools_ids = full_ids[:, system_len:boundary]
-        query_ids = full_ids[:, boundary:]
         total_len = full_ids.shape[1]
         attn_mask = torch.ones(1, total_len, dtype=torch.long, device=device)
         cache_after_tools, tools_prefill_ms = ingest_prefix_segment(
@@ -279,7 +278,7 @@ def main() -> None:
         timing = run_inference(
             model,
             tokenizer,
-            query_ids,
+            full_ids,
             device,
             ttft_capture,
             past_key_values=cache_after_tools,

@@ -62,11 +62,9 @@ def run_inference(
     Parameters
     ----------
     input_ids:
-        Tokenised prompt (or the dynamic suffix when *past_key_values* provided).
-        When *report_prefill_split* is True, this is just the user-query
-        tokens — the system-prompt and tools-list tokens were already
-        ingested by the caller via ``ingest_prefix_segment`` and folded into
-        *past_key_values*.
+        Complete tokenised prompt. When *past_key_values* is provided,
+        Transformers uses its length to slice this sequence to the unprocessed
+        user-query suffix before the first forward pass.
     past_key_values:
         Pre-computed KV cache for the static prompt prefix.
     attention_mask:
@@ -129,12 +127,14 @@ def run_inference(
 
     preprocessing_ms = system_prefill_ms + tools_prefill_ms
 
-    # Effective context length includes cached prefix tokens.
-    n_input = input_ids.shape[1] + cached_prefix_tokens
+    # ``input_ids`` is the entire prompt; the cached prefix is already part of
+    # it. The remaining suffix is the only part prefilling during this call.
+    n_input = input_ids.shape[1]
+    query_input_tokens = max(0, n_input - cached_prefix_tokens)
     n_generated = result.sequences.shape[1] - input_ids.shape[1]
 
     prefill_tok_per_sec = (
-        (input_ids.shape[1] / query_prefill_ms * 1000) if query_prefill_ms > 0 else None
+        (query_input_tokens / query_prefill_ms * 1000) if query_prefill_ms > 0 else None
     )
     decode_tok_per_sec = (
         ((n_generated - 1) / decode_ms * 1000) if decode_ms > 0 and n_generated > 1 else None
@@ -165,7 +165,7 @@ def run_inference(
     }
 
     if report_prefill_split:
-        query_prefill_tokens = input_ids.shape[1]
+        query_prefill_tokens = query_input_tokens
         system_tok_per_sec = (
             (system_prefill_tokens / system_prefill_ms * 1000) if system_prefill_ms > 0 else None
         )
