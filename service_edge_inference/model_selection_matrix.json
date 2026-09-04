@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "purpose": "Pinned deployment configuration for the edge tool-routing service. Every supported profile uses the same v2.1 Qwen2.5-0.5B GGUF artifact and emits positional tool IDs.",
+  "model": {
+    "manifest_version": "v2.1",
+    "name": "Qwen2.5-0.5B",
+    "release": {
+      "repository": "kon172verma/intent-classifier",
+      "revision": "7f160918f6b5bdf330deee52512a4f5dcb11af84",
+      "subfolder": "v2.1-qwen2.5-0.5b"
+    },
+    "engine": "llama_cpp",
+    "artifact_type": "gguf",
+    "quantization": "Q6_K",
+    "artifact_path": "models/v2.1/Qwen2.5-0.5B/gguf/Q6_K/model.gguf",
+    "tokenizer_path": "models/v2.1/Qwen2.5-0.5B/transformers/merged",
+    "cache_mode": "prefix_cache",
+    "context_limit": 2048
+  },
+  "prediction": {
+    "model_output_format": "positional_id",
+    "model_no_tool_token": "-",
+    "canonical_no_tool_value": "none",
+    "prompt_template_id": "v2-positional-id",
+    "qwen_enable_thinking": false,
+    "public_response": {
+      "raw_output_field": "tool_id",
+      "canonical_tool_field": "tool",
+      "mapping": "The gateway maps a valid positional ID to the corresponding submitted tool name. It maps '-' or a malformed output to 'none'."
+    }
+  },
+  "deployment_profiles": {
+    "cpu": {
+      "supported_hosts": [
+        "mac_cpu",
+        "rpi",
+        "jetson_cpu"
+      ],
+      "container_image_family": "cpu-multiarch",
+      "llama_cpp_compute": "cpu",
+      "gpu_offload": 0,
+      "selection_status": "partially_measured",
+      "evidence": {
+        "source_run": "v2.1_mac_cpu_20260901T035251Z",
+        "tool_accuracy": 1.0,
+        "p95_e2e_latency_ms": 54.697,
+        "peak_ram_mb": 2115.05
+      },
+      "validation_notice": "Raspberry Pi and Jetson CPU use this same pinned model by design, but each still requires its own target-device test_anchor validation before release."
+    },
+    "jetson_gpu": {
+      "supported_hosts": [
+        "jetson_gpu"
+      ],
+      "container_image_family": "cuda-arm64",
+      "llama_cpp_compute": "cuda",
+      "gpu_offload": "all",
+      "selection_status": "provisional",
+      "evidence": {
+        "proxy_source_run": "v2.1_mac_gpu_20260901T022857Z",
+        "tool_accuracy": 1.0,
+        "p95_e2e_latency_ms": 24.919,
+        "peak_ram_mb": 1609.75
+      },
+      "validation_notice": "This profile must be benchmarked on the target Jetson and built against its exact JetPack/L4T and CUDA compatibility before release."
+    }
+  },
+  "unsupported_profiles": {
+    "mac_gpu": "Apple GPU/MPS/Metal is intentionally unsupported because Docker on macOS cannot expose the native Metal runtime."
+  }
+}
