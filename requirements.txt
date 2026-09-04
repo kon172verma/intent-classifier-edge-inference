@@ -1,11 +1,16 @@
-dotenv
-huggingface_hub
-peft
-transformers
-torch
-numpy
-tensorflow
-matplotlib
-llama-cpp-python
-onnx
-onnxruntime
+-r service_edge_inference/requirements.txt
+
+python-dotenv==1.0.1
+huggingface_hub==0.36.2
+peft==0.13.2
+transformers==4.46.3
+torch==2.4.1
+numpy==1.23.5
+tensorflow==2.12.0
+matplotlib==3.7.5
+llama-cpp-python==0.3.35
+onnx==1.17.0
+onnxruntime==1.19.2
+h5py==3.11.0
+Cython==0.29.37
+pkgconfig==1.5.5
