@@ -49,7 +49,7 @@ def load_model_and_tokenizer(
         f" → device={device}, dtype={dtype}"
     )
 
-    model: Any = AutoModelForCausalLM.from_pretrained(str(model_path), dtype=dtype)
+    model: Any = AutoModelForCausalLM.from_pretrained(str(model_path), torch_dtype=dtype)
     if device != "cpu":
         model = model.to(device)  # type: ignore[arg-type]
     model.eval()
