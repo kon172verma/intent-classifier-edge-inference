@@ -3,7 +3,8 @@
 python-dotenv==1.0.1
 huggingface_hub==0.36.2
 peft==0.13.2
-transformers==4.46.3
+# Qwen3 checkpoints require Transformers 4.51.0 or newer.
+transformers==4.51.3
 torch==2.4.1
 numpy==1.23.5
 tensorflow==2.12.0

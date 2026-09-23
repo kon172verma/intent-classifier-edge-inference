@@ -4,8 +4,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import torch
+from transformers import AutoConfig
 
 from evaluation_baseline.model_loader import load_model_and_tokenizer
+
+
+def test_transformers_runtime_recognizes_qwen3() -> None:
+    """The pinned runtime must load the Qwen3 model type in the v2.1 manifest."""
+    assert AutoConfig.for_model("qwen3").model_type == "qwen3"
 
 
 def test_loader_passes_torch_dtype_to_transformers() -> None:
