@@ -1,10 +1,11 @@
 -r service_edge_inference/requirements.txt
 
 python-dotenv==1.0.1
-huggingface_hub==0.36.2
+# Matches the version recorded in the v2.1 merged Qwen3 artifact provenance.
+# Transformers 5.12 requires huggingface_hub >= 1.5.
+huggingface_hub==1.24.0
 peft==0.13.2
-# Qwen3 checkpoints require Transformers 4.51.0 or newer.
-transformers==4.51.3
+transformers==5.12.1
 torch==2.4.1
 numpy==1.23.5
 tensorflow==2.12.0
