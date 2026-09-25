@@ -1,0 +1,485 @@
+quad@ubuntu:~$ cat jetson_hw_report_20260731_225644.txt 
+Jetson Hardware Report
+Generated: 2026年  7月 31日 金曜日 22:56:44 JST
+
+
+============================================================
+System
+============================================================
+   Static hostname: ubuntu
+         Icon name: computer
+        Machine ID: dbfef1aa0b064bcf9d30ec3ad0886edb
+           Boot ID: b01c45dfca8a45e2bd0d16065bbf1fc8
+  Operating System: Ubuntu 20.04.5 LTS
+            Kernel: Linux 5.10.104-tegra
+      Architecture: arm64
+
+Linux ubuntu 5.10.104-tegra #1 SMP PREEMPT Sun Mar 19 07:55:28 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+
+NAME="Ubuntu"
+VERSION="20.04.5 LTS (Focal Fossa)"
+ID=ubuntu
+ID_LIKE=debian
+PRETTY_NAME="Ubuntu 20.04.5 LTS"
+VERSION_ID="20.04"
+HOME_URL="https://www.ubuntu.com/"
+SUPPORT_URL="https://help.ubuntu.com/"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+VERSION_CODENAME=focal
+UBUNTU_CODENAME=focal
+
+============================================================
+JetPack / L4T
+============================================================
+# R35 (release), REVISION: 3.1, GCID: 32827747, BOARD: t186ref, EABI: aarch64, DATE: Sun Mar 19 15:19:21 UTC 2023
+nvidia-l4t-3d-core      35.3.1-20230319081403
+nvidia-l4t-apt-source   35.3.1-20230319081403
+nvidia-l4t-bootloader   35.3.1-20230319081403
+nvidia-l4t-camera       35.3.1-20230319081403
+nvidia-l4t-ccp-t186ref
+nvidia-l4t-configs      35.3.1-20230319081403
+nvidia-l4t-core 35.3.1-20230319081403
+nvidia-l4t-cuda 35.3.1-20230319081403
+nvidia-l4t-display-kernel       5.10.104-tegra-35.3.1-20230319081403
+nvidia-l4t-firmware     35.3.1-20230319081403
+nvidia-l4t-gbm  35.3.1-20230319081403
+nvidia-l4t-graphics-demos       35.3.1-20230319081403
+nvidia-l4t-gstreamer    35.3.1-20230319081403
+nvidia-l4t-init 35.3.1-20230319081403
+nvidia-l4t-initrd       35.3.1-20230319081403
+nvidia-l4t-jetson-io    35.3.1-20230319081403
+nvidia-l4t-jetsonpower-gui-tools        35.3.1-20230319081403
+nvidia-l4t-kernel       5.10.104-tegra-35.3.1-20230319081403
+nvidia-l4t-kernel-dtbs  5.10.104-tegra-35.3.1-20230319081403
+nvidia-l4t-kernel-headers       5.10.104-tegra-35.3.1-20230319081403
+nvidia-l4t-libvulkan    35.3.1-20230319081403
+nvidia-l4t-multimedia   35.3.1-20230319081403
+nvidia-l4t-multimedia-utils     35.3.1-20230319081403
+nvidia-l4t-nvfancontrol 35.3.1-20230319081403
+nvidia-l4t-nvpmodel     35.3.1-20230319081403
+nvidia-l4t-nvpmodel-gui-tools   35.3.1-20230319081403
+nvidia-l4t-nvsci        35.3.1-20230319081403
+nvidia-l4t-oem-config   35.3.1-20230319081403
+nvidia-l4t-openwfd      35.3.1-20230319081403
+nvidia-l4t-optee        35.3.1-20230319081403
+nvidia-l4t-pva  35.3.1-20230319081403
+nvidia-l4t-tools        35.3.1-20230319081403
+nvidia-l4t-vulkan-sc    35.3.1-20230319081403
+nvidia-l4t-vulkan-sc-dev        35.3.1-20230319081403
+nvidia-l4t-vulkan-sc-samples    35.3.1-20230319081403
+nvidia-l4t-vulkan-sc-sdk        35.3.1-20230319081403
+nvidia-l4t-wayland      35.3.1-20230319081403
+nvidia-l4t-weston       35.3.1-20230319081403
+nvidia-l4t-x11  35.3.1-20230319081403
+nvidia-l4t-xusb-firmware        35.3.1-20230319081403
+
+============================================================
+Jetson Release Script
+============================================================
+jetson_release not installed
+
+============================================================
+CPU
+============================================================
+Architecture:                    aarch64
+CPU op-mode(s):                  32-bit, 64-bit
+Byte Order:                      Little Endian
+CPU(s):                          6
+On-line CPU(s) list:             0-5
+Thread(s) per core:              1
+Core(s) per socket:              2
+Socket(s):                       3
+Vendor ID:                       Nvidia
+Model:                           0
+Model name:                      ARMv8 Processor rev 0 (v8l)
+Stepping:                        0x0
+CPU max MHz:                     1907.2000
+CPU min MHz:                     115.2000
+BogoMIPS:                        62.50
+L1d cache:                       384 KiB
+L1i cache:                       768 KiB
+L2 cache:                        6 MiB
+L3 cache:                        4 MiB
+Vulnerability Itlb multihit:     Not affected
+Vulnerability L1tf:              Not affected
+Vulnerability Mds:               Not affected
+Vulnerability Meltdown:          Not affected
+Vulnerability Spec store bypass: Not affected
+Vulnerability Spectre v1:        Mitigation; __user pointer sanitization
+Vulnerability Spectre v2:        Mitigation; Branch predictor hardening
+Vulnerability Srbds:             Not affected
+Vulnerability Tsx async abort:   Not affected
+Flags:                           fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm dcpop
+
+============================================================
+Memory
+============================================================
+              total        used        free      shared  buff/cache   available
+Mem:          6.7Gi       2.7Gi       2.3Gi        54Mi       1.7Gi       3.7Gi
+Swap:         3.3Gi          0B       3.3Gi
+
+MemTotal:        7021492 kB
+MemFree:         2383464 kB
+MemAvailable:    3924720 kB
+Buffers:           64152 kB
+Cached:          1651464 kB
+SwapCached:            0 kB
+Active:           678416 kB
+Inactive:        2919408 kB
+Active(anon):       6352 kB
+Inactive(anon):  1952328 kB
+Active(file):     672064 kB
+Inactive(file):   967080 kB
+Unevictable:       20204 kB
+Mlocked:               0 kB
+SwapTotal:       3510736 kB
+SwapFree:        3510736 kB
+Dirty:               472 kB
+Writeback:             0 kB
+AnonPages:       1873412 kB
+Mapped:           441756 kB
+Shmem:             56268 kB
+KReclaimable:      99552 kB
+Slab:             230792 kB
+SReclaimable:      99552 kB
+SUnreclaim:       131240 kB
+KernelStack:       17984 kB
+PageTables:        30184 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:     7021480 kB
+Committed_AS:    8759388 kB
+VmallocTotal:   135290159040 kB
+VmallocUsed:       49824 kB
+VmallocChunk:          0 kB
+Percpu:             3792 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:    591872 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+FileHugePages:         0 kB
+FilePmdMapped:         0 kB
+CmaTotal:          65536 kB
+CmaFree:           44460 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:       2048 kB
+Hugetlb:               0 kB
+
+============================================================
+Storage
+============================================================
+NAME         MAJ:MIN RM   SIZE RO TYPE MOUNTPOINT
+loop0          7:0    0     6M  1 loop /snap/ngrok/141
+loop1          7:1    0  33.7M  1 loop /snap/snapd/21761
+loop2          7:2    0  48.8M  1 loop /snap/core18/2848
+loop3          7:3    0  35.2M  1 loop /snap/snapd/20674
+loop4          7:4    0  49.1M  1 loop /snap/core18/2826
+loop5          7:5    0   6.2M  1 loop /snap/ngrok/193
+loop6          7:6    0    16M  1 loop 
+mmcblk0      179:0    0  14.7G  0 disk 
+├─mmcblk0p1  179:1    0    14G  0 part /
+├─mmcblk0p2  179:2    0    64M  0 part 
+├─mmcblk0p3  179:3    0   448K  0 part 
+├─mmcblk0p4  179:4    0  32.6M  0 part 
+├─mmcblk0p5  179:5    0   2.5M  0 part 
+├─mmcblk0p6  179:6    0    64K  0 part 
+├─mmcblk0p7  179:7    0     1M  0 part 
+├─mmcblk0p8  179:8    0     1M  0 part 
+├─mmcblk0p9  179:9    0     1M  0 part 
+├─mmcblk0p10 179:10   0   1.5M  0 part 
+├─mmcblk0p11 179:11   0     1M  0 part 
+├─mmcblk0p12 179:12   0    64M  0 part 
+├─mmcblk0p13 179:13   0   448K  0 part 
+├─mmcblk0p14 179:14   0  32.5M  0 part 
+├─mmcblk0p15 179:15   0    80M  0 part 
+├─mmcblk0p16 179:16   0   512K  0 part 
+├─mmcblk0p17 179:17   0   100M  0 part 
+├─mmcblk0p18 179:18   0    64M  0 part 
+├─mmcblk0p19 179:19   0    80M  0 part 
+├─mmcblk0p20 179:20   0   512K  0 part 
+├─mmcblk0p21 179:21   0    64M  0 part 
+└─mmcblk0p22 179:22   0   101M  0 part 
+mmcblk1      179:32   0 119.1G  0 disk 
+└─mmcblk1p1  179:33   0   119G  0 part /mnt/sdcard
+zram0        251:0    0 857.1M  0 disk [SWAP]
+zram1        251:1    0 857.1M  0 disk [SWAP]
+zram2        251:2    0 857.1M  0 disk [SWAP]
+zram3        251:3    0 857.1M  0 disk [SWAP]
+
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p1   14G   12G  1.5G  90% /
+none            3.4G     0  3.4G   0% /dev
+tmpfs           3.4G   36K  3.4G   1% /dev/shm
+tmpfs           686M   27M  659M   4% /run
+tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+tmpfs           3.4G     0  3.4G   0% /sys/fs/cgroup
+/dev/loop0      6.0M  6.0M     0 100% /snap/ngrok/141
+/dev/loop1       34M   34M     0 100% /snap/snapd/21761
+/dev/loop2       49M   49M     0 100% /snap/core18/2848
+/dev/loop3       36M   36M     0 100% /snap/snapd/20674
+/dev/loop4       50M   50M     0 100% /snap/core18/2826
+/dev/loop5      6.3M  6.3M     0 100% /snap/ngrok/193
+/dev/mmcblk1p1  117G  362M  111G   1% /mnt/sdcard
+tmpfs           686M   20K  686M   1% /run/user/124
+tmpfs           686M   40K  686M   1% /run/user/1000
+
+============================================================
+GPU
+============================================================
+0004:00:00.0 PCI bridge: NVIDIA Corporation Device 1ad1 (rev a1)
+
+
+============================================================
+CUDA
+============================================================
+nvcc not found
+
+
+
+============================================================
+cuDNN
+============================================================
+
+
+============================================================
+TensorRT
+============================================================
+
+============================================================
+OpenCV
+============================================================
+No module named 'cv2'
+
+============================================================
+Python
+============================================================
+Python 3.8.10
+Python 3.8.10
+
+============================================================
+NVIDIA Utilities
+============================================================
+/usr/bin/tegrastats
+
+============================================================
+Tegrastats (5 samples)
+============================================================
+07-31-2026 22:57:04 RAM 3002/6857MB (lfb 432x4MB) SWAP 0/3428MB (cached 0MB) CPU [35%@1420,64%@1420,70%@1420,30%@1420,41%@1420,40%@1420] EMC_FREQ 0% GR3D_FREQ 18% AUX@45.5C CPU@46.5C thermal@45.5C AO@45C GPU@45C iwlwifi@53C PMIC@50C
+07-31-2026 22:57:05 RAM 3031/6857MB (lfb 432x4MB) SWAP 0/3428MB (cached 0MB) CPU [29%@1420,91%@1420,22%@1420,41%@1420,36%@1420,59%@1420] EMC_FREQ 0% GR3D_FREQ 7% AUX@45C CPU@46.5C thermal@45.65C AO@44.5C GPU@45C iwlwifi@53C PMIC@50C
+07-31-2026 22:57:06 RAM 3031/6857MB (lfb 432x4MB) SWAP 0/3428MB (cached 0MB) CPU [61%@1420,81%@1420,76%@1420,32%@1420,65%@1420,64%@1420] EMC_FREQ 0% GR3D_FREQ 13% AUX@45.5C CPU@47C thermal@45.8C AO@45C GPU@45C iwlwifi@53C PMIC@50C
+07-31-2026 22:57:07 RAM 3044/6857MB (lfb 432x4MB) SWAP 0/3428MB (cached 0MB) CPU [32%@1420,83%@1420,22%@1420,22%@1420,77%@1420,39%@1420] EMC_FREQ 0% GR3D_FREQ 5% AUX@45.5C CPU@47C thermal@45.8C AO@45C GPU@45C iwlwifi@53C PMIC@50C
+
+============================================================
+Installed NVIDIA Packages
+============================================================
+ii  nvidia-l4t-3d-core                         35.3.1-20230319081403                arm64        NVIDIA GL EGL Package
+ii  nvidia-l4t-apt-source                      35.3.1-20230319081403                arm64        NVIDIA L4T apt source list debian package
+ii  nvidia-l4t-bootloader                      35.3.1-20230319081403                arm64        NVIDIA Bootloader Package
+ii  nvidia-l4t-camera                          35.3.1-20230319081403                arm64        NVIDIA Camera Package
+ii  nvidia-l4t-configs                         35.3.1-20230319081403                arm64        NVIDIA configs debian package
+ii  nvidia-l4t-core                            35.3.1-20230319081403                arm64        NVIDIA Core Package
+ii  nvidia-l4t-cuda                            35.3.1-20230319081403                arm64        NVIDIA CUDA Package
+ii  nvidia-l4t-display-kernel                  5.10.104-tegra-35.3.1-20230319081403 arm64        NVIDIA Display Kernel Modules Package
+ii  nvidia-l4t-firmware                        35.3.1-20230319081403                arm64        NVIDIA Firmware Package
+ii  nvidia-l4t-gbm                             35.3.1-20230319081403                arm64        NVIDIA GBM Package
+ii  nvidia-l4t-graphics-demos                  35.3.1-20230319081403                arm64        NVIDIA graphics demo applications
+ii  nvidia-l4t-gstreamer                       35.3.1-20230319081403                arm64        NVIDIA GST Application files
+ii  nvidia-l4t-init                            35.3.1-20230319081403                arm64        NVIDIA Init debian package
+ii  nvidia-l4t-initrd                          35.3.1-20230319081403                arm64        NVIDIA initrd debian package
+ii  nvidia-l4t-jetson-io                       35.3.1-20230319081403                arm64        NVIDIA Jetson.IO debian package
+ii  nvidia-l4t-jetsonpower-gui-tools           35.3.1-20230319081403                arm64        NVIDIA Jetson Power GUI Tools debian package
+ii  nvidia-l4t-kernel                          5.10.104-tegra-35.3.1-20230319081403 arm64        NVIDIA Kernel Package
+ii  nvidia-l4t-kernel-dtbs                     5.10.104-tegra-35.3.1-20230319081403 arm64        NVIDIA Kernel DTB Package
+ii  nvidia-l4t-kernel-headers                  5.10.104-tegra-35.3.1-20230319081403 arm64        NVIDIA Linux Tegra Kernel Headers Package
+ii  nvidia-l4t-libvulkan                       35.3.1-20230319081403                arm64        NVIDIA Vulkan Loader Package
+ii  nvidia-l4t-multimedia                      35.3.1-20230319081403                arm64        NVIDIA Multimedia Package
+ii  nvidia-l4t-multimedia-utils                35.3.1-20230319081403                arm64        NVIDIA Multimedia Package
+ii  nvidia-l4t-nvfancontrol                    35.3.1-20230319081403                arm64        NVIDIA Nvfancontrol debian package
+ii  nvidia-l4t-nvpmodel                        35.3.1-20230319081403                arm64        NVIDIA Nvpmodel debian package
+ii  nvidia-l4t-nvpmodel-gui-tools              35.3.1-20230319081403                arm64        NVIDIA Nvpmodel GUI Tools debian package
+ii  nvidia-l4t-nvsci                           35.3.1-20230319081403                arm64        NVIDIA NvSci Package
+ii  nvidia-l4t-oem-config                      35.3.1-20230319081403                arm64        NVIDIA OEM-Config Package
+ii  nvidia-l4t-openwfd                         35.3.1-20230319081403                arm64        NVIDIA OpenWFD Package
+ii  nvidia-l4t-optee                           35.3.1-20230319081403                arm64        OP-TEE userspace daemons, test programs and libraries
+ii  nvidia-l4t-pva                             35.3.1-20230319081403                arm64        NVIDIA PVA Package
+ii  nvidia-l4t-tools                           35.3.1-20230319081403                arm64        NVIDIA Public Test Tools Package
+ii  nvidia-l4t-vulkan-sc                       35.3.1-20230319081403                arm64        NVIDIA Vulkan SC run-time package
+ii  nvidia-l4t-vulkan-sc-dev                   35.3.1-20230319081403                arm64        NVIDIA Vulkan SC Dev package
+ii  nvidia-l4t-vulkan-sc-samples               35.3.1-20230319081403                arm64        NVIDIA Vulkan SC samples package
+ii  nvidia-l4t-vulkan-sc-sdk                   35.3.1-20230319081403                arm64        NVIDIA Vulkan SC SDK package
+ii  nvidia-l4t-wayland                         35.3.1-20230319081403                arm64        NVIDIA Wayland Package
+ii  nvidia-l4t-weston                          35.3.1-20230319081403                arm64        NVIDIA Weston Package
+ii  nvidia-l4t-x11                             35.3.1-20230319081403                arm64        NVIDIA X11 Package
+ii  nvidia-l4t-xusb-firmware                   35.3.1-20230319081403                arm64        NVIDIA USB Firmware Package
+
+============================================================
+USB
+============================================================
+Bus 002 Device 002: ID 0bda:0411 Realtek Semiconductor Corp. USB3.2 Hub
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 001 Device 003: ID 8087:0029 Intel Corp. 
+Bus 001 Device 006: ID 046d:c52b Logitech, Inc. Unifying Receiver
+Bus 001 Device 005: ID 046d:c548 Logitech, Inc. 
+Bus 001 Device 002: ID 0bda:5411 Realtek Semiconductor Corp. USB2.1 Hub
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+
+============================================================
+PCI
+============================================================
+0004:00:00.0 PCI bridge: NVIDIA Corporation Device 1ad1 (rev a1) (prog-if 00 [Normal decode])
+        Control: I/O+ Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR+ FastB2B- DisINTx-
+        Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-
+        Latency: 0
+        Interrupt: pin A routed to IRQ 24
+        Bus: primary=00, secondary=01, subordinate=ff, sec-latency=0
+        I/O behind bridge: [disabled]
+        Memory behind bridge: 40000000-400fffff [size=1M]
+        Prefetchable memory behind bridge: [disabled]
+        Secondary status: 66MHz- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- <SERR- <PERR-
+        BridgeCtl: Parity- SERR+ NoISA- VGA- VGA16- MAbort- >Reset- FastB2B-
+                PriDiscTmr- SecDiscTmr- DiscTmrStat- DiscTmrSERREn-
+        Capabilities: <access denied>
+        Kernel driver in use: pcieport
+
+0004:01:00.0 Network controller: Intel Corporation Wi-Fi 6 AX200 (rev 1a)
+        Subsystem: Intel Corporation Wi-Fi 6 AX200
+        Control: I/O- Mem+ BusMaster+ SpecCycle- MemWINV- VGASnoop- ParErr- Stepping- SERR- FastB2B- DisINTx+
+        Status: Cap+ 66MHz- UDF- FastB2B- ParErr- DEVSEL=fast >TAbort- <TAbort- <MAbort- >SERR- <PERR- INTx-
+        Latency: 0
+        Interrupt: pin A routed to IRQ 24
+        Region 0: Memory at 1740000000 (64-bit, non-prefetchable) [size=16K]
+        Capabilities: <access denied>
+        Kernel driver in use: iwlwifi
+        Kernel modules: iwlwifi
+
+
+============================================================
+Camera
+============================================================
+NVIDIA Tegra Video Input Device (platform:tegra-camrtc-ca):
+        /dev/media0
+
+Dummy video device (0x0000) (platform:v4l2loopback-000):
+        /dev/video40
+
+Dummy video device (0x0001) (platform:v4l2loopback-001):
+        /dev/video41
+
+Dummy video device (0x0002) (platform:v4l2loopback-002):
+        /dev/video50
+
+Dummy video device (0x0003) (platform:v4l2loopback-003):
+        /dev/video51
+
+
+/dev/video40
+/dev/video41
+/dev/video50
+/dev/video51
+
+============================================================
+Kernel Modules
+============================================================
+snd_soc_tegra186_asrc    36864  0
+snd_soc_tegra210_iqc    16384  0
+snd_soc_tegra186_arad    24576  1 snd_soc_tegra186_asrc
+snd_soc_tegra186_dspk    20480  0
+snd_soc_tegra210_ope    32768  0
+snd_soc_tegra210_mvc    20480  0
+snd_soc_tegra210_dmic    20480  0
+snd_soc_tegra210_afc    20480  0
+snd_soc_tegra210_adx    28672  0
+snd_soc_tegra210_admaif   118784  0
+snd_soc_tegra210_amx    32768  0
+snd_soc_tegra_pcm      16384  1 snd_soc_tegra210_admaif
+snd_soc_tegra210_i2s    24576  0
+snd_soc_tegra210_mixer    45056  0
+snd_soc_tegra210_sfc    57344  0
+snd_soc_tegra_machine_driver    16384  0
+snd_soc_tegra210_adsp   753664  0
+tegra_bpmp_thermal     16384  0
+snd_soc_tegra210_ahub  1257472  2 snd_soc_tegra210_ope,snd_soc_tegra210_sfc
+tegra210_adma          28672  2 snd_soc_tegra210_admaif,snd_soc_tegra210_adsp
+snd_soc_tegra_utils    28672  3 snd_soc_tegra210_admaif,snd_soc_tegra_machine_driver,snd_soc_tegra210_adsp
+snd_soc_simple_card_utils    24576  1 snd_soc_tegra_utils
+nvadsp                110592  1 snd_soc_tegra210_adsp
+snd_hda_tegra          16384  0
+snd_hda_codec         118784  2 snd_hda_codec_hdmi,snd_hda_tegra
+snd_hda_core           81920  3 snd_hda_codec_hdmi,snd_hda_codec,snd_hda_tegra
+spi_tegra114           32768  0
+
+============================================================
+Environment
+============================================================
+WINDOWPATH=2
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+
+============================================================
+Network
+============================================================
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: dummy0: <BROADCAST,NOARP> mtu 1500 qdisc noop state DOWN group default qlen 1000
+    link/ether fe:a0:b3:32:aa:65 brd ff:ff:ff:ff:ff:ff
+3: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 58:1c:f8:4a:c9:55 brd ff:ff:ff:ff:ff:ff
+    altname wlP4p1s0
+    inet 192.168.2.154/24 brd 192.168.2.255 scope global dynamic noprefixroute wlan0
+       valid_lft 171421sec preferred_lft 171421sec
+    inet6 2001:f71:3e0:5f00:7bc4:7216:414:8170/64 scope global temporary dynamic 
+       valid_lft 603422sec preferred_lft 84985sec
+    inet6 2001:f71:3e0:5f00:1e7b:4837:e86f:c388/64 scope global mngtmpaddr noprefixroute 
+       valid_lft forever preferred_lft forever
+    inet6 fe80::3d60:2fc2:241:e1ef/64 scope link noprefixroute 
+       valid_lft forever preferred_lft forever
+4: l4tbr0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default qlen 1000
+    link/ether 2a:d0:a8:28:14:e5 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.55.1/24 brd 192.168.55.255 scope global l4tbr0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::1/128 scope link tentative 
+       valid_lft forever preferred_lft forever
+5: rndis0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc pfifo_fast master l4tbr0 state DOWN group default qlen 1000
+    link/ether 2a:d0:a8:28:14:e5 brd ff:ff:ff:ff:ff:ff
+6: usb0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc pfifo_fast master l4tbr0 state DOWN group default qlen 1000
+    link/ether 2a:d0:a8:28:14:e7 brd ff:ff:ff:ff:ff:ff
+8: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default 
+    link/ether 02:42:b0:22:28:5f brd ff:ff:ff:ff:ff:ff
+    inet 172.16.0.1/24 brd 172.16.0.255 scope global docker0
+       valid_lft forever preferred_lft forever
+
+============================================================
+Disk Benchmark (optional info)
+============================================================
+/dev/mmcblk0p1 on / type ext4 (rw,relatime)
+
+============================================================
+Device Tree
+============================================================
+NVIDIA Jetson Xavier NX Developer Kit
+
+============================================================
+CPU Frequency
+============================================================
+1420800
+
+============================================================
+GPU Frequency
+============================================================
+
+============================================================
+Done
+============================================================
+
+Report saved to:
+jetson_hw_report_20260731_225644.txt
+quad@ubuntu:~$ 
